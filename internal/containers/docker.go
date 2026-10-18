@@ -57,6 +57,7 @@ func dockerList(m machine.Machine, sock string) ([]Info, bool) {
 		}
 		in := Info{ID: d.ID, Name: strings.TrimPrefix(d.Name, "/"), Runtime: RuntimeDocker,
 			StartedBy: startedBy(d.Config.Labels, StartedDockerRun)}
+		in.ComposeProject, in.ComposeService = d.Config.Labels[labelCompose], d.Config.Labels[labelComposeSvc]
 		if d.HostConfig.Memory > 0 {
 			v := uint64(d.HostConfig.Memory)
 			in.MemoryLimit = &v

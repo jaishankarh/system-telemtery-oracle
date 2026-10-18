@@ -36,6 +36,9 @@ type Info struct {
 	// Pod is set for a Kubernetes container; its containers form one Pod.
 	PodName      string
 	PodNamespace string
+	// ComposeProject and ComposeService are set for a Compose-started container.
+	ComposeProject string
+	ComposeService string
 	// Sandbox marks the pause container that holds a Pod's namespaces.
 	Sandbox bool
 }
@@ -47,6 +50,7 @@ const (
 	labelCRIKind      = "io.cri-containerd.kind"
 	labelCompose      = "com.docker.compose.project"
 	labelNerdctlName  = "nerdctl/name"
+	labelComposeSvc   = "com.docker.compose.service"
 )
 
 // Socket locations, tried in order; the first that answers is used.

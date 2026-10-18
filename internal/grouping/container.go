@@ -16,6 +16,9 @@ type ContainerMember struct {
 	StartedBy   string  `json:"started_by"` // compose, docker run, kubernetes, nerdctl, containerd
 	MemoryLimit *uint64 `json:"memory_limit_bytes"`
 	Sandbox     bool    `json:"sandbox,omitempty"` // a Pod's pause container
+	// ComposeProject and ComposeService name the Compose service of a Compose-started container.
+	ComposeProject string `json:"compose_project,omitempty"`
+	ComposeService string `json:"compose_service,omitempty"`
 }
 
 // ContainerInfo is what the runtimes say about a Container or Pod. MemoryLimit
@@ -51,7 +54,8 @@ func (l *ContainerPod) Match(p *collector.Process, _ *Context) (Match, bool) {
 		return Match{}, false
 	}
 	m := &ContainerMember{ID: in.ID, Name: in.Name, Runtime: in.Runtime, StartedBy: in.StartedBy,
-		MemoryLimit: in.MemoryLimit, Sandbox: in.Sandbox}
+		MemoryLimit: in.MemoryLimit, Sandbox: in.Sandbox,
+		ComposeProject: in.ComposeProject, ComposeService: in.ComposeService}
 	if in.PodName != "" {
 		return Match{Kind: KindPod, Key: in.PodNamespace + "/" + in.PodName, Name: in.PodName, Sub: in.Name, Container: m}, true
 	}
