@@ -47,6 +47,8 @@ type Input struct {
 	PSI       *PSI
 	PSIReason string
 	Swap      SwapActivity
+	// Swappiness is vm.swappiness; nil when /proc/sys/vm/swappiness is unreadable.
+	Swappiness *int
 }
 
 // WorkingSet is the sum over Applications of PSS + swap. ok is false when no
@@ -81,7 +83,7 @@ func (in *Input) TopApps(n int) []AppRef {
 
 // DefaultRules lists every rule. Tickets #13-#17 add theirs here.
 func DefaultRules() []Rule {
-	return []Rule{HardwareLimitRule{}}
+	return []Rule{HardwareLimitRule{}, SwappinessRule{}, CompressedSwapThrashingRule{}, SwapWearRule{}}
 }
 
 func fnum(name string, v float64, unit string) Fact { return Fact{Name: name, Value: &v, Unit: unit} }
