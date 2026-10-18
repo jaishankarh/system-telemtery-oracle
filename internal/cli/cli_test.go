@@ -163,3 +163,26 @@ func TestInvalidConfigAndIntervalRejected(t *testing.T) {
 		t.Fatal("bad config must fail")
 	}
 }
+
+func TestEveryRouteRefusesANonLoopbackHost(t *testing.T) {
+	m := harness.New(t, "dev-box-applications")
+	p := m.Start()
+	p.Tick()
+	paths := []string{"/", "/api/system", "/api/processes", "/api/applications", "/api/history?minutes=1",
+		"/api/history/span", "/api/history/series", "/api/advice", "/api/self"}
+	for _, path := range paths {
+		if code, _ := p.Get(path); code == 403 {
+			t.Fatalf("GET %s on a loopback Host was refused", path)
+		}
+		for _, host := range []string{"evil.example.com", "evil.example.com:8080", "192.168.1.5:9000"} {
+			if code, body := p.GetAsHost(path, host); code != 403 {
+				t.Fatalf("GET %s with Host %s = %d, want 403 (DNS rebinding); body %.80s", path, host, code, body)
+			}
+		}
+		for _, host := range []string{"localhost:8080", "127.0.0.1", "[::1]:80"} {
+			if code, _ := p.GetAsHost(path, host); code == 403 {
+				t.Fatalf("GET %s with loopback Host %s was refused", path, host)
+			}
+		}
+	}
+}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 
@@ -86,11 +85,7 @@ func sameOriginRequest(r *http.Request) bool {
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
 		return false // a cross-site form or text/plain post cannot be JSON
 	}
-	host, _, err := net.SplitHostPort(r.Host)
-	if err != nil {
-		host = r.Host
-	}
-	if host != "127.0.0.1" && host != "localhost" && host != "::1" && host != "[::1]" {
+	if !loopbackHost(r.Host) {
 		return false
 	}
 	if o := r.Header.Get("Origin"); o != "" {

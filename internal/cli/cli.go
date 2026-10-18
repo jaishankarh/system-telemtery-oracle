@@ -126,7 +126,7 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 		fmt.Fprintln(env.Stderr, "error:", err)
 		return 1
 	}
-	hs := &http.Server{Handler: withSelf(guard, withHistory(rec.Recorder, srv.Handler())), ReadHeaderTimeout: 5 * time.Second}
+	hs := &http.Server{Handler: server.LoopbackOnly(withSelf(guard, withHistory(rec.Recorder, srv.Handler()))), ReadHeaderTimeout: 5 * time.Second}
 	go hs.Serve(ln)
 	if !rec.otherInstance {
 		defer announceInstance(env, ctx, ln.Addr().String())()

@@ -313,6 +313,24 @@ func (p *Program) Get(path string) (int, []byte) {
 	return resp.StatusCode, b
 }
 
+// GetAsHost fetches a path with a different Host header, as a DNS-rebinding
+// page in a browser would send it.
+func (p *Program) GetAsHost(path, host string) (int, []byte) {
+	p.t.Helper()
+	req, err := http.NewRequest("GET", "http://"+p.Addr+path, nil)
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	req.Host = host
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.t.Fatalf("GET %s as %s: %v", path, host, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
 // GetJSON fetches a path and decodes the JSON body into v.
 func (p *Program) GetJSON(path string, v any) {
 	p.t.Helper()
