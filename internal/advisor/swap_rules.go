@@ -126,12 +126,14 @@ func (SwappinessRule) Check(in *Input) []Finding {
 	content := "# Written by hand from sys-telemetry-app advice; nothing was applied for you.\n" +
 		"# Reason: Disk Swap was written to for a Sustained period while " + fmt.Sprintf("%.0f%%", cachePct) + " of RAM is page cache.\n" +
 		"# A lower vm.swappiness makes the kernel drop page cache before it swaps out Application memory.\n" +
-		"vm.swappiness = 10\n"
+		"vm.swappiness = 10\n" +
+		"# Keeping directory and inode caches a little longer (default 100) makes file access cheaper once Application memory stays in RAM.\n" +
+		"vm.vfs_cache_pressure = 50\n"
 	return []Finding{{
 		Category: SettingsFix,
 		Severity: Warning,
 		Title:    "Swappiness is too aggressive: Application memory goes to Disk Swap while page cache is large",
-		Summary:  reason + " Lowering it to 10 keeps Application memory in RAM.",
+		Summary:  reason + " Lowering it to 10 (and vm.vfs_cache_pressure to 50) keeps Application memory in RAM.",
 		Facts: []Fact{
 			fnum("swappiness", float64(*in.Swappiness), ""),
 			fnum("page_cache_bytes", float64(mem.CachedBytes), "bytes"),

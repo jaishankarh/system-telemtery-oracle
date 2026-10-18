@@ -70,7 +70,7 @@ func TestSwappinessRuleFiresWhenDiskSwapIsWrittenWithLargePageCache(t *testing.T
 	if a.Category != "settings_fix" || a.Kind != "sysctl.d" || a.Target != "/etc/sysctl.d/99-swappiness.conf" {
 		t.Fatalf("advice = %+v", a)
 	}
-	for _, want := range []string{"vm.swappiness = 10", "# Reason:"} {
+	for _, want := range []string{"vm.swappiness = 10", "vm.vfs_cache_pressure = 50", "# Reason:"} {
 		if !strings.Contains(a.Content, want) {
 			t.Errorf("sysctl text lacks %q:\n%s", want, a.Content)
 		}
