@@ -4,6 +4,15 @@ Run on your Ubuntu laptop, as root, from a checkout of `integration/phase-1`. On
 
 Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build`.
 
+## Ticket 19: Release workflow and install script
+
+- [ ] `git tag v0.0.1-test && git push origin v0.0.1-test`; the "release" workflow run in GitHub Actions goes green and the Release lists `sys-telemetry-app-linux-amd64`, `sys-telemetry-app-linux-arm64`, `SHA256SUMS`, `install.sh` (delete the test release and tag afterwards)
+- [ ] Local dry run of the script without network: `make build && (cd dist && sha256sum sys-telemetry-app-linux-* > SHA256SUMS) && SYS_TELEMETRY_BASE_URL=$PWD/dist INSTALL_DIR=/tmp/sta sh scripts/install.sh` prints "Installed /tmp/sta/sys-telemetry-app (amd64)"
+- [ ] On the laptop: `curl -fsSL https://github.com/jaishankarh/system-telemtery-oracle/releases/latest/download/install.sh | sudo sh` installs to /usr/local/bin
+- [ ] `sudo sys-telemetry-app report` shows real data (CPU, RAM, Disk Swap, Compressed Swap) from the downloaded binary
+- [ ] `file /usr/local/bin/sys-telemetry-app` says statically linked, x86-64 (aarch64 on an ARM box)
+- [ ] Tampering check: edit a byte in SHA256SUMS locally and rerun the dry run; it fails with "checksum mismatch" and installs nothing
+
 ## Ticket 2: Walking skeleton
 
 - [ ] `make build` then `file dist/sys-telemetry-app-linux-amd64 dist/sys-telemetry-app-linux-arm64` shows "statically linked" and "stripped" for both
