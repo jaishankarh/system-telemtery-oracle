@@ -18,6 +18,7 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/selfguard"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/server"
 )
 
@@ -51,8 +52,7 @@ func Run(ctx context.Context, env Env, args []string) int {
 		}
 		return run(ctx, env, cfg)
 	case "install", "uninstall":
-		fmt.Fprintf(env.Stderr, "%s: not implemented yet\n", cmd)
-		return 2
+		return installCmd(env, cmd)
 	default:
 		fmt.Fprintf(env.Stderr, "unknown command %q\nusage: sys-telemetry-app [run|report|install|uninstall] [--port N] [--interval D] [--config PATH]\n", cmd)
 		return 2
@@ -94,6 +94,10 @@ func parseFlags(env Env, name string, args []string) (config.Config, error) {
 }
 
 func run(ctx context.Context, env Env, cfg config.Config) int {
+	guard := selfguard.Start(env.Machine)
+	if st := guard.Status(); !st.OOMProtected {
+		fmt.Fprintln(env.Stderr, "warning: could not exempt own process from the OOM killer:", st.OOMError)
+	}
 	col := collector.NewLinux(env.Machine)
 	srv := server.New(cfg.Interval)
 	first, _ := col.Collect()
@@ -104,7 +108,7 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 		fmt.Fprintln(env.Stderr, "error:", err)
 		return 1
 	}
-	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	hs := &http.Server{Handler: withSelf(guard, srv.Handler()), ReadHeaderTimeout: 5 * time.Second}
 	go hs.Serve(ln)
 	fmt.Fprintf(env.Stderr, "sys-telemetry-app listening on http://%s\n", ln.Addr())
 	if env.OnListen != nil {
@@ -121,6 +125,7 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 			cancel()
 			return 0
 		case <-tk.C():
+			guard.Check() // before publishing, so a published sample implies the check ran
 			if s, err := col.Collect(); err == nil {
 				srv.Update(s)
 			}

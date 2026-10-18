@@ -17,6 +17,8 @@
 //	p.Stop()                                     // cancel (also registered with t.Cleanup)
 //	m.Run(args...)                               // run any CLI invocation, returns code, stdout, stderr
 //
+//	m.Host.OOMScoreAdj / Units / Systemctls / SetRSS(n)  // what the program changed on the fake Host
+//
 // Fixture "dev-box-process-tree" is the laptop fixture plus a recorded process
 // tree: /proc/<pid>/{stat,status,cmdline,io,smaps_rollup,fd/*} for five
 // processes (init, a kernel thread, an editor extension host, a browser content
@@ -51,6 +53,8 @@ type Machine struct {
 	t     *testing.T
 	Root  string
 	Clock *FakeClock
+	// Host records what the program would change (OOM score, systemd unit); nothing is really written.
+	Host *FakeHost
 }
 
 // New creates a fake machine from testdata/fixtures/<fixture>.
@@ -80,11 +84,11 @@ func New(t *testing.T, fixture string) *Machine {
 	if err := os.MkdirAll(filepath.Join(root, "state"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC))}
+	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost()}
 }
 
 func (m *Machine) machine() machine.Machine {
-	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state")}
+	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host}
 }
 
 // WriteFile creates or replaces a file at an absolute system path.

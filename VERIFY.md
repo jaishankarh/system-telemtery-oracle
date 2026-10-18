@@ -4,6 +4,26 @@ Run on your Ubuntu laptop, as root, from a checkout of `integration/phase-1`. On
 
 Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build`.
 
+## Ticket 18: Self-guard and systemd install
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`; in another shell `cat /proc/$(pgrep -f 'sys-telemetry-app.*run' | head -1)/oom_score_adj` prints `-1000`
+- [ ] `curl -s 127.0.0.1:9191/api/self` shows `oom_protected: true`, `oom_score_adj: -1000`, `memory_cap_bytes: 67108864`, `memory_cap_source: "internal"`, and a plausible `rss_bytes` (well under 30 MB)
+- [ ] `sudo install -m 755 dist/sys-telemetry-app-linux-amd64 /usr/local/bin/sys-telemetry-app && sudo sys-telemetry-app install` prints `install: done`
+- [ ] `systemctl status sys-telemetry-app` is active (running) and enabled; `cat /etc/systemd/system/sys-telemetry-app.service` shows `MemoryMax=64M`, `OOMScoreAdjust=-1000`
+- [ ] `systemctl show sys-telemetry-app -p MemoryMax` shows 67108864; `curl -s 127.0.0.1:9191/api/self` now reports `memory_cap_source: "systemd"`
+- [ ] Reboot (or `sudo systemctl restart`), the service comes back by itself
+- [ ] `sudo sys-telemetry-app uninstall` prints `uninstall: done`; then `ls /etc/systemd/system/sys-telemetry-app.service` fails, `systemctl status sys-telemetry-app` says not found, and `systemctl list-unit-files | grep sys-telemetry` is empty
+- [ ] Nothing else changed: `sysctl -a | md5sum` and `cat /proc/*/oom_score_adj | sort | uniq -c` before and after differ only by the tool's own process
+
+## Ticket 19: Release workflow and install script
+
+- [ ] `git tag v0.0.1-test && git push origin v0.0.1-test`; the "release" workflow run in GitHub Actions goes green and the Release lists `sys-telemetry-app-linux-amd64`, `sys-telemetry-app-linux-arm64`, `SHA256SUMS`, `install.sh` (delete the test release and tag afterwards)
+- [ ] Local dry run of the script without network: `make build && (cd dist && sha256sum sys-telemetry-app-linux-* > SHA256SUMS) && SYS_TELEMETRY_BASE_URL=$PWD/dist INSTALL_DIR=/tmp/sta sh scripts/install.sh` prints "Installed /tmp/sta/sys-telemetry-app (amd64)"
+- [ ] On the laptop: `curl -fsSL https://github.com/jaishankarh/system-telemtery-oracle/releases/latest/download/install.sh | sudo sh` installs to /usr/local/bin
+- [ ] `sudo sys-telemetry-app report` shows real data (CPU, RAM, Disk Swap, Compressed Swap) from the downloaded binary
+- [ ] `file /usr/local/bin/sys-telemetry-app` says statically linked, x86-64 (aarch64 on an ARM box)
+- [ ] Tampering check: edit a byte in SHA256SUMS locally and rerun the dry run; it fails with "checksum mismatch" and installs nothing
+
 ## Ticket 2: Walking skeleton
 
 - [ ] `make build` then `file dist/sys-telemetry-app-linux-amd64 dist/sys-telemetry-app-linux-arm64` shows "statically linked" and "stripped" for both

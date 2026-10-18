@@ -33,11 +33,13 @@ type Machine struct {
 	Clock Clock
 	// StateDir holds persistent state (/var/lib/sys-telemetry-app in production).
 	StateDir string
+	// Host is what the program may change (its own OOM score and systemd unit).
+	Host Host
 }
 
 // Real returns the Machine backed by the actual system.
 func Real() Machine {
-	return Machine{Root: "/", Clock: realClock{}, StateDir: "/var/lib/sys-telemetry-app"}
+	return Machine{Root: "/", Clock: realClock{}, StateDir: "/var/lib/sys-telemetry-app", Host: realHost{}}
 }
 
 // Path maps an absolute system path such as "/proc/meminfo" under Root.
