@@ -41,6 +41,9 @@ type Match struct {
 	// Sub optionally names a sub-group inside the Application, such as the
 	// container within a Pod; it is shown in the drilldown.
 	Sub string
+	// Container is set by the Container / Pod layer: the container this
+	// Process runs in, kept so the Application can expose its memory limit.
+	Container *ContainerMember
 }
 
 // Layer recognises the Processes it can name. Match must be deterministic for
@@ -102,6 +105,9 @@ type Application struct {
 	Read         *float64 `json:"disk_read_bytes_per_sec"`
 	Write        *float64 `json:"disk_write_bytes_per_sec"`
 	Processes    []Member `json:"processes"` // ascending PID
+	// Container is set for a Container or Pod: how it was started, its
+	// memory limit (nil: none) and, for a Pod, its containers.
+	Container *ContainerInfo `json:"container,omitempty"`
 }
 
 // PSSPlusSwap is the Application's contribution to the Working Set.
@@ -166,6 +172,7 @@ func (g *Grouper) Group(procs []collector.Process) []Application {
 		}
 		a.Processes = append(a.Processes, Member{Process: *p, Subgroup: match.Sub})
 		appOf[p.PID] = id
+		a.noteContainer(match.Container)
 	}
 	out := make([]Application, 0, len(apps))
 	for id, a := range apps {
@@ -192,6 +199,7 @@ func total(a Application) uint64 {
 func finish(a *Application, id string, appOf map[int]string) {
 	sort.Slice(a.Processes, func(i, j int) bool { return a.Processes[i].PID < a.Processes[j].PID })
 	a.ProcessCount = len(a.Processes)
+	a.finishContainer()
 	a.PIDs = make([]int, 0, len(a.Processes))
 	a.PrimaryPIDs = []int{}
 	for _, m := range a.Processes {
