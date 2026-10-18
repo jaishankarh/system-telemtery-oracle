@@ -1,3 +1,5 @@
+//go:build nvml
+
 package gpu
 
 import (

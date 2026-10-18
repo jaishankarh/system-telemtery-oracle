@@ -6,6 +6,8 @@
 #   SYS_TELEMETRY_VERSION    release tag, e.g. v0.1.0 (default: latest)
 #   SYS_TELEMETRY_BASE_URL   URL or local directory holding the release files
 #                            (overrides the GitHub location; used by tests)
+#   SYS_TELEMETRY_VARIANT    "nvml" installs the build with NVIDIA GPU support. It is
+#                            NOT static (needs glibc). Default: the static binary.
 #   SYS_TELEMETRY_UNAME_M    override of `uname -m` (used by tests)
 set -eu
 
@@ -47,7 +49,11 @@ fetch() { # fetch <name> <dest>
   esac
 }
 
-asset=$BIN-linux-$arch
+case "${SYS_TELEMETRY_VARIANT:-}" in
+  "") asset=$BIN-linux-$arch ;;
+  nvml) asset=$BIN-nvml-linux-$arch ;;
+  *) die "unknown SYS_TELEMETRY_VARIANT: $SYS_TELEMETRY_VARIANT (use nvml, or leave it unset)" ;;
+esac
 fetch "$asset" "$tmp/$asset" || die "download of $asset failed"
 fetch SHA256SUMS "$tmp/SHA256SUMS" || die "download of SHA256SUMS failed"
 
@@ -59,4 +65,4 @@ have=$(sha256sum "$tmp/$asset" | awk '{ print $1 }')
 mkdir -p "$INSTALL_DIR"
 chmod 755 "$tmp/$asset"
 mv "$tmp/$asset" "$INSTALL_DIR/$BIN" 2>/dev/null || cp "$tmp/$asset" "$INSTALL_DIR/$BIN"
-echo "Installed $INSTALL_DIR/$BIN ($arch)"
+echo "Installed $INSTALL_DIR/$BIN ($arch${SYS_TELEMETRY_VARIANT:+, $SYS_TELEMETRY_VARIANT variant})"

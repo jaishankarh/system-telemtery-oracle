@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -26,12 +27,15 @@ func u64(v uint64) *uint64   { return &v }
 func TestNoGPUMeansNoGPUSection(t *testing.T) {
 	m := harness.New(t, "laptop-live")
 	p := m.Start()
-	code, body := p.Get("/api/system")
-	if code != 200 || strings.Contains(string(body), `"gpus"`) {
-		t.Fatalf("want no gpus key, got %d %s", code, body)
+	var top map[string]json.RawMessage
+	p.GetJSON("/api/system", &top)
+	if _, ok := top["gpus"]; ok {
+		t.Fatalf("want no gpus key, got %s", top["gpus"])
 	}
-	if out := m.Report(); strings.Contains(out, "GPU") {
-		t.Fatalf("report must not mention GPU:\n%s", out)
+	for _, line := range strings.Split(m.Report(), "\n") {
+		if strings.HasPrefix(line, "GPU  ") { // the data line; the unavailable list says "  GPU: ..."
+			t.Fatalf("report must have no GPU line: %q", line)
+		}
 	}
 	_, live := p.Get("/api/live")
 	if strings.Contains(string(live), `"gpu_util_percent":0`) {

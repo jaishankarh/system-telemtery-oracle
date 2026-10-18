@@ -79,6 +79,7 @@ import (
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/cli"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
@@ -91,6 +92,8 @@ type Machine struct {
 	Host *FakeHost
 	// GPU is the fake NVIDIA reader (NVML); use GPU.Set to put NVIDIA GPUs on the machine.
 	GPU *FakeGPU
+	// realGPU, when set, replaces the fake: the NVIDIA reader this build really ships.
+	realGPU gpu.Reader
 	// Docker and Containerd are fake container-runtime sockets. A runtime
 	// nothing was added to has no socket, like a machine without it.
 	Docker     *FakeDocker
@@ -138,7 +141,7 @@ func New(t *testing.T, fixture string) *Machine {
 }
 
 func (m *Machine) machine() machine.Machine {
-	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, Dial: m.socks.dial, GPU: m.GPU}
+	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, Dial: m.socks.dial, GPU: m.gpuReader()}
 }
 
 // WriteFile creates or replaces a file at an absolute system path.
@@ -286,4 +289,16 @@ func (p *Program) Tick() {
 func (m *Machine) tryRead(path string) (string, error) {
 	b, err := os.ReadFile(filepath.Join(m.Root, path))
 	return string(b), err
+}
+
+// UseBuildGPUReader swaps the fake NVIDIA reader for the one this build of the
+// program ships (gpu.NewNVML): in the default static build it reports that
+// NVIDIA support needs the nvml build. Use it to test that behaviour.
+func (m *Machine) UseBuildGPUReader() { m.realGPU = gpu.NewNVML() }
+
+func (m *Machine) gpuReader() gpu.Reader {
+	if m.realGPU != nil {
+		return m.realGPU
+	}
+	return m.GPU
 }

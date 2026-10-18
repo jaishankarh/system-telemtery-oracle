@@ -1,6 +1,8 @@
 package collector
 
 import (
+	"github.com/jaishankarh/system-telemtery-oracle/internal/availability"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 	"regexp"
 	"sort"
 	"strconv"
@@ -8,6 +10,35 @@ import (
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
 )
+
+func init() {
+	// NVIDIA hardware that this binary cannot read is listed as unavailable
+	// with the reader's reason (ADR 0006), instead of silently missing.
+	availability.RegisterProbe("nvidia_gpu", func(m machine.Machine, env availability.Environment) *availability.Item {
+		ex, ok := m.GPU.(gpu.Explainer)
+		if !ok || !nvidiaPresent(m) {
+			return nil
+		}
+		reason := ex.Unavailable()
+		if reason == "" {
+			return nil
+		}
+		return &availability.Item{ID: "nvidia_gpu", Feature: "NVIDIA GPU", Reason: reason, Affects: []string{"GPU section", "GPU graph"}}
+	})
+}
+
+// nvidiaPresent reports NVIDIA hardware or driver, judged from sysfs and /proc.
+func nvidiaPresent(m machine.Machine) bool {
+	if len(m.Glob("/proc/driver/nvidia/version")) > 0 {
+		return true
+	}
+	for _, v := range m.Glob("/sys/class/drm/card*/device/vendor") {
+		if b, err := m.ReadFile(v); err == nil && strings.TrimSpace(string(b)) == "0x10de" {
+			return true
+		}
+	}
+	return false
+}
 
 var cardName = regexp.MustCompile(`^card[0-9]+$`)
 

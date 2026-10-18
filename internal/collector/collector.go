@@ -8,8 +8,8 @@ package collector
 import (
 	"time"
 
-	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/availability"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
 )
 
 // Collector produces one Sample per call. Rates are derived from the previous

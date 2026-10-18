@@ -25,3 +25,10 @@ type None struct{}
 
 // Read implements Reader.
 func (None) Read() []Device { return nil }
+
+// Explainer is optionally implemented by a Reader that can say why it has no
+// NVIDIA data (the static build, or the driver library failed to load).
+// Unavailable returns "" when nothing is wrong.
+type Explainer interface {
+	Unavailable() string
+}

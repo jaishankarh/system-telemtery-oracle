@@ -1,3 +1,5 @@
+//go:build nvml
+
 package gpu
 
 import (
@@ -31,6 +33,17 @@ type NVML struct {
 	api      nvmlAPI
 	skips    int  // reads left before trying to load again after a failure
 	inFlight bool // a previous read is still stuck inside NVML
+	lastErr  string
+}
+
+// Unavailable implements Explainer: why the last attempt to load NVML failed.
+func (n *NVML) Unavailable() string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.api != nil || n.lastErr == "" {
+		return ""
+	}
+	return "NVIDIA GPU data could not be read: " + n.lastErr
 }
 
 // retryEvery is how many reads to skip before trying to load NVML again after
@@ -111,6 +124,12 @@ func (n *NVML) read() []Device {
 		}
 		a, err := n.open()
 		if err != nil || a == nil {
+			n.mu.Lock()
+			n.lastErr = "NVML did not load"
+			if err != nil {
+				n.lastErr = err.Error()
+			}
+			n.mu.Unlock()
 			n.drop()
 			return nil
 		}
