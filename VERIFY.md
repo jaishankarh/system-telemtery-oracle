@@ -33,3 +33,14 @@ Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build
 - [ ] Open http://127.0.0.1:9191 in a browser: CPU, RAM and Swap sections update every ~2s; with the network disconnected it still works
 - [ ] Generate swap activity (e.g. `stress-ng --vm 2 --vm-bytes 90%` for 30s) and check swap-in/out rates and CPU % move in the dashboard
 - [ ] Config: write `/etc/sys-telemetry-app/config.toml` with `port = 9292` and `interval = "3s"`; a plain `run` uses them (`curl 127.0.0.1:9292/api/info` shows `interval_seconds: 3`); `--port`/`--interval` flags override it; `--interval 500ms` is rejected
+
+## Ticket 3: Processes view
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 report`: a "Top processes by PSS + swap" table lists 15 rows (PID, USER, PSS, SWAP, RSS, CPU%, COMMAND). Browser/editor/Docker processes you know are running appear near the top; usernames are names, not numbers
+- [ ] Compare one row with `sudo grep -E '^(Pss|Swap):' /proc/<pid>/smaps_rollup` and `grep VmRSS /proc/<pid>/status`: PSS, SWAP and RSS match (in MiB)
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`, then `curl -s 127.0.0.1:9191/api/processes | head -c 1500`: every process has pid, user, name, full command line, rss/pss/swap bytes, threads, open_fds; `cpu_percent` and disk rates are null on the very first sample only; `missing` is empty (or lists only sources your kernel lacks)
+- [ ] `curl -s '127.0.0.1:9191/api/processes?sort=cpu_percent&order=desc'` after ~4s: top entry matches the busiest process in `top`/`htop` (cpu_percent is percent of one core, so can exceed 100)
+- [ ] Filters: `?filter=<a pid>` returns that process; `?filter=chrome|firefox` returns the browser processes; `?filter=(` returns HTTP 400
+- [ ] Dashboard at http://127.0.0.1:9191: Processes table shows all 12 columns; clicking each header sorts (arrow shows direction, second click reverses); typing a PID, a name or a regex filters live; a bad regex shows an error beside the box
+- [ ] Start something that writes to disk (`dd if=/dev/zero of=/tmp/x bs=1M count=2000 oflag=direct`) and watch its Write/s column rise; start `yes > /dev/null` and watch CPU % near 100
+- [ ] PSS/Swap refresh only every ~10s (watch a process allocating memory: RSS moves every 2s, PSS/Swap in steps of 10s)
