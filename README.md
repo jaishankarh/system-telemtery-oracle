@@ -127,7 +127,7 @@ Live updates use Server-Sent Events and only happen while at least one client is
 
 Every Process belongs to exactly one Application. Layers are tried in order and the first match wins:
 
-1. **Container / Pod:** from the cgroup path. Names come from the Docker API socket and the containerd socket (including k3s and kind). Kubernetes containers roll up per Pod. Docker Compose labels are read for context.
+1. **Container / Pod:** from the cgroup path. Container names are refreshed in the background (about every 15 s), so a slow Docker daemon never delays sampling. Names come from the Docker API socket and the containerd socket (including k3s and kind). Kubernetes containers roll up per Pod. Docker Compose labels are read for context.
 2. **User rules:** `[[group]]` tables in the config file (they run before built-in profiles).
 3. **Dev & Build per Project:** dev servers, compilers and build tools (node/npm/pnpm/yarn dev servers, cargo, go build, gradle, make, tsc, vite, webpack, ...) grouped by **Project**, wherever they were launched from, including an editor's built-in terminal. The Project is the nearest ancestor of the process's working directory that is a VCS root, otherwise the working directory itself.
 4. **App Profiles** (built in): Cursor / VS Code / Windsurf (Electron shell, extension hosts, language servers, file watchers, ripgrep); JetBrains IDEs and the Gradle/Maven daemons they start; Chrome, Chromium, Brave, Edge and Firefox (one row per browser with all tabs and helpers); Android emulator and the Gradle daemon.
@@ -149,7 +149,7 @@ A condition must be **Sustained** (held for the whole advisor window, default 5 
 |---|---|---|
 | `editor-file-watcher` | Sustained high CPU or memory in an editor's watcher, ripgrep or language-server processes | `files.watcherExclude` / `search.exclude` for `node_modules`, `dist`, `.cache`, build output; names the Project when known |
 | `container-limit` | A Container or Pod with no memory limit and a large Working Set (>= 1 GiB) or swap (>= 256 MiB) | A memory limit of the 24-hour peak plus 25%, as a Compose `deploy.resources.limits.memory` snippet, `docker run --memory`, or Kubernetes `resources.limits.memory` |
-| `swappiness-too-aggressive` | Swapping to Disk Swap while the page cache is large | A `/etc/sysctl.d/` file with `vm.swappiness` and the reason |
+| `swappiness-too-aggressive` | Swapping to Disk Swap while the page cache is large | A `/etc/sysctl.d/` file with `vm.swappiness` and `vm.vfs_cache_pressure`, and the reason |
 | `compressed-swap-thrashing` | Thrashing on zram/zswap only | The CPU cost explained, and a zram size or algorithm suggestion (no disk wear) |
 | `browser-process-sprawl` | High total PSS across many renderer processes | Tab-unloading or process-limit settings for that browser |
 | `swap-wear` | Sustained Disk Swap write volume | A daily write estimate and a suggestion to prefer Compressed Swap |
@@ -193,7 +193,7 @@ Typical use after a freeze and reboot:
 sudo sys-telemetry-app replay --last-boot --minutes 15 --processes
 ```
 
-If the state directory is not writable, `run` warns and continues without History.
+If the state directory is not writable, `run` warns and continues without History. A second instance sharing the state directory is refused History (an exclusive lock on `history.lock`) and runs without it. A ring with a damaged header or wrong size is moved aside to `history.ring.corrupt` and a fresh one is started; History queries read only the slots in the requested window, one query at a time.
 
 ## Configuration
 
@@ -270,7 +270,7 @@ sudo systemctl status sys-telemetry-app
 sudo sys-telemetry-app uninstall
 ```
 
-The unit gives the recorder a hard memory cap (`MemoryMax=64M`) and the program sets its own `oom_score_adj` to -1000, so the kernel kills something else first when memory runs out. This does not prevent a freeze or reboot; it only keeps the recorder alive longer so the lead-up gets written. Without systemd, `run` works the same in the foreground.
+The unit gives the recorder a hard memory cap (`MemoryMax=64M`) and the program sets its own `oom_score_adj` to -1000 (and a soft Go memory limit just under its cap, shedding the live buffer and logging if it nears it), so the kernel kills something else first when memory runs out. This does not prevent a freeze or reboot; it only keeps the recorder alive longer so the lead-up gets written. Without systemd, `run` works the same in the foreground.
 
 ## GPU support
 
@@ -287,8 +287,8 @@ No GPU or no NVML: the GPU section is hidden.
 
 ## Safety and privacy
 
-- **Advise only** (ADR 0003). The tool never writes sysctl, changes container limits, kills or renices anything. The only things it writes are its own `oom_score_adj`, its systemd unit (on `install`), and its own files in the state directory (`history.ring`, `state.json`, `instance.addr`).
-- **Loopback only.** The dashboard binds to `127.0.0.1` with no authentication. For remote viewing use an SSH tunnel: `ssh -L 9191:127.0.0.1:9191 host`.
+- **Advise only** (ADR 0003). The tool never writes sysctl, changes container limits, kills or renices anything. The only things it writes are its own `oom_score_adj`, its systemd unit (on `install`), and its own files in the state directory (`history.ring`, `history.lock`, `state.json`, `instance.addr`). The state directory is `0700` and its files `0600`.
+- **Loopback only.** The dashboard binds to `127.0.0.1` with no authentication, and every route answers `403` to a request whose Host is not loopback (this blocks DNS-rebinding from web pages). At most 16 live streams are served at once. For remote viewing use an SSH tunnel: `ssh -L 9191:127.0.0.1:9191 host`.
 - **Command lines can contain secrets.** History stores full command lines (accepted risk, ADR 0004); the ring file is `0600` and root-owned. Anyone who can reach the local port can also read the API, so treat a shared machine accordingly.
 - **No shelling out.** Data comes from `/proc`, `/sys`, cgroup files, container-runtime sockets and runtime-loaded GPU libraries; there are no calls to `ps`, `top`, `nvidia-smi` or `docker`. (`systemctl` is used only by `install` and `uninstall`.)
 
