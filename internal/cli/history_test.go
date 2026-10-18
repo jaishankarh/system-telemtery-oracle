@@ -138,7 +138,7 @@ func TestReplayLastBootShowsCommandLinesAndAdviceEvents(t *testing.T) {
 	p.AppendEvent(history.Event{Time: m.Clock.Now(), Kind: history.AdviceStarted, AdviceID: "uncapped-container", Title: "Uncapped container", Category: "settings_fix", Severity: "critical", Applications: []string{"code"}})
 	p.Kill()
 	out := replayOut(t, m, "--last-boot", "--minutes", "2")
-	for _, want := range []string{"/usr/share/code/code --type=extensionHost", "node /usr/share/code/tsserver.js", "ADVICE advice_start", "Uncapped container"} {
+	for _, want := range []string{"/opt/acme-ide/acme-ide --type=extensionHost", "node /opt/acme-ide/server.js", "ADVICE advice_start", "Uncapped container"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}

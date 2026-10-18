@@ -176,7 +176,14 @@ func (m *Machine) Remove(path string) {
 // Run executes one CLI invocation to completion and returns exit code, stdout, stderr.
 func (m *Machine) Run(args ...string) (int, string, string) {
 	var out, errb bytes.Buffer
-	code := cli.Run(context.Background(), cli.Env{Machine: m.machine(), Stdout: &out, Stderr: &errb}, args)
+	// A one-shot invocation is its own OS process in reality, so it gets its own clock,
+	// starting at the machine's current time. Sharing the clock would make `report`'s
+	// sleeps fire the running instance's ticker and add samples it never took.
+	cm := m.machine()
+	own := NewFakeClock(m.Clock.Now())
+	own.OnSleep = m.Clock.OnSleep
+	cm.Clock = own
+	code := cli.Run(context.Background(), cli.Env{Machine: cm, Stdout: &out, Stderr: &errb}, args)
 	return code, out.String(), errb.String()
 }
 

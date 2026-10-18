@@ -197,22 +197,43 @@ func TestHiddenAndSnoozedStatePersistsAcrossRestarts(t *testing.T) {
 func TestOnlyStateJSONIsWrittenToTheStateDir(t *testing.T) {
 	m, p, id := activeThrashing(t, "")
 	mustPost(t, p, "/api/advice/hide", `{"id":"`+id+`"}`)
+	// History (the ring file and the instance address) lives in the same directory;
+	// hiding must add only state.json and leave no temporary file behind.
 	es, _ := os.ReadDir(filepath.Join(m.Root, "state"))
-	if len(es) != 1 || es[0].Name() != "state.json" {
-		t.Fatalf("state dir = %v", es)
+	seen := map[string]bool{}
+	for _, e := range es {
+		seen[e.Name()] = true
+		switch e.Name() {
+		case "state.json", "history.ring", "instance.addr":
+		default:
+			t.Fatalf("unexpected file in the state dir: %v", es)
+		}
 	}
+	if !seen["state.json"] {
+		t.Fatalf("state.json not written: %v", es)
+	}
+}
+
+func stateDirNames(m *harness.Machine) []string {
+	es, _ := os.ReadDir(filepath.Join(m.Root, "state"))
+	var names []string
+	for _, e := range es {
+		names = append(names, e.Name())
+	}
+	return names
 }
 
 func TestReportShowsHiddenAndSnoozed(t *testing.T) {
 	m, p, id := activeThrashing(t, "")
 	mustPost(t, p, "/api/advice/hide", `{"id":"`+id+`"}`)
 	p.Stop()
+	before := stateDirNames(m)
 	code, out, errs := m.Run("report", "--config", "/etc/sys-telemetry-app/config.toml")
 	if code != 0 || !strings.Contains(out, "hidden (until Severity rises above critical)") || !strings.Contains(out, id) {
 		t.Fatalf("report %d %q %q", code, out, errs)
 	}
-	if es, _ := os.ReadDir(filepath.Join(m.Root, "state")); len(es) != 1 {
-		t.Fatalf("report must not write: %v", es)
+	if after := stateDirNames(m); strings.Join(after, ",") != strings.Join(before, ",") {
+		t.Fatalf("report must not write: before %v, after %v", before, after)
 	}
 }
 
