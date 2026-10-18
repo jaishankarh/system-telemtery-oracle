@@ -69,7 +69,7 @@ func (l *Linux) Collect() (Sample, error) {
 		s.CPU.Cores = cores
 		if ok {
 			cur.cpuTotal, cur.cpuIdle, cur.haveCPU = total, idle, true
-			if l.prev != nil && l.prev.haveCPU && total > l.prev.cpuTotal {
+			if l.prev != nil && l.prev.haveCPU && total > l.prev.cpuTotal && idle >= l.prev.cpuIdle {
 				v := 100 * (1 - float64(idle-l.prev.cpuIdle)/float64(total-l.prev.cpuTotal))
 				s.CPU.TotalPercent = &v
 			}
@@ -84,7 +84,7 @@ func (l *Linux) Collect() (Sample, error) {
 		in, out, ok := parseVmstat(b)
 		if ok {
 			cur.pswpin, cur.pswpout, cur.haveVmstat = in, out, true
-			if l.prev != nil && l.prev.haveVmstat && dt > 0 {
+			if l.prev != nil && l.prev.haveVmstat && dt > 0 && in >= l.prev.pswpin && out >= l.prev.pswpout {
 				a, c := float64(in-l.prev.pswpin)/dt, float64(out-l.prev.pswpout)/dt
 				s.Swap.InPagesPerSec, s.Swap.OutPagesPerSec = &a, &c
 			}

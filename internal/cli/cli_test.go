@@ -186,3 +186,20 @@ func TestEveryRouteRefusesANonLoopbackHost(t *testing.T) {
 		}
 	}
 }
+
+func TestACounterThatGoesBackwardGivesNoRateNotAHugeOne(t *testing.T) {
+	m := harness.New(t, fx)
+	p := m.Start()
+	// swap counters reset (a reboot of the counters, or swapoff/swapon), and idle time went backwards
+	m.WriteFile("/proc/vmstat", "pswpin 5\npswpout 7\n")
+	m.WriteFile("/proc/stat", "cpu  1240 0 335 100 99 0 64 55 0 0\ncpu0 1 0 0 1 0 0 0 0 0 0\ncpu1 1 0 0 1 0 0 0 0 0 0\n")
+	p.Tick()
+	var s sys
+	p.GetJSON("/api/system", &s)
+	if s.Swap.InPagesPerSec != nil || s.Swap.OutPagesPerSec != nil {
+		t.Fatalf("swap rates from backward counters = %v %v", *s.Swap.InPagesPerSec, *s.Swap.OutPagesPerSec)
+	}
+	if s.CPU.TotalPercent != nil {
+		t.Fatalf("cpu from backward idle = %v", *s.CPU.TotalPercent)
+	}
+}

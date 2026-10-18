@@ -141,7 +141,7 @@ func (l *Linux) readProcess(pid int, now time.Time, users map[string]string, old
 		if ok {
 			st.readB, st.writeB, st.haveIO = r, w, true
 			if old != nil && old.haveIO {
-				if dt := now.Sub(old.seenAt).Seconds(); dt > 0 {
+				if dt := now.Sub(old.seenAt).Seconds(); dt > 0 && r >= old.readB && w >= old.writeB {
 					a, c := float64(r-old.readB)/dt, float64(w-old.writeB)/dt
 					p.Read, p.Write = &a, &c
 				}
