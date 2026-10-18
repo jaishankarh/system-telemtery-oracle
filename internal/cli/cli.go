@@ -17,6 +17,7 @@ import (
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/selfguard"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/server"
@@ -99,7 +100,7 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 		fmt.Fprintln(env.Stderr, "warning: could not exempt own process from the OOM killer:", st.OOMError)
 	}
 	col := collector.NewLinux(env.Machine)
-	srv := server.New(cfg.Interval)
+	srv := server.New(cfg.Interval, grouping.Default(env.Machine))
 	first, _ := col.Collect()
 	srv.Update(first)
 

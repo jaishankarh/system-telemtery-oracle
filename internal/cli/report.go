@@ -53,6 +53,7 @@ func report(env Env, col collector.Collector) int {
 	} else {
 		fmt.Fprintln(w, "Swap-in/out rates unavailable")
 	}
+	topApplications(w, env, s)
 	topProcesses(w, s)
 	for _, p := range s.Missing {
 		fmt.Fprintf(w, "missing data source: %s\n", p)

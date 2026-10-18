@@ -29,6 +29,11 @@ type Process struct {
 	Write   *float64 `json:"disk_write_bytes_per_sec"`
 	Threads int      `json:"threads"`
 	OpenFDs *int     `json:"open_fds"`
+	// Location, for grouping into Applications (SPEC 5.2): parent PID, cgroup
+	// path (systemd hierarchy) and working directory. Empty when unreadable.
+	PPID   int    `json:"ppid"`
+	Cgroup string `json:"cgroup,omitempty"`
+	Cwd    string `json:"cwd,omitempty"`
 }
 
 // MemoryDetailEvery is how often PSS and swap are re-read per process; reading
@@ -121,6 +126,7 @@ func (l *Linux) readProcess(pid int, now time.Time, users map[string]string, old
 		p.Command = strings.ReplaceAll(string(cmd), "\x00", " ")
 	}
 	userProcess := vmRSS != nil // kernel threads have no address space
+	l.readLocation(&p, dir, statB, userProcess, miss)
 
 	if names, err := l.m.ReadDir(dir + "/fd"); err == nil {
 		n := len(names)

@@ -26,6 +26,13 @@
 // to move a process's counters between Ticks. Process endpoint: GET
 // /api/processes?sort=<json field>&order=asc|desc&filter=<pid or regex>.
 //
+// Fixture "dev-box-applications" (regenerate with scripts/gen-applications-fixture.py)
+// is the same machine with 18 processes forming a desktop session: editor and
+// language server in a desktop scope, a flatpak browser, a snap, a service, a
+// terminal with a dev server, a kernel thread pair, orphans and one process
+// nothing can name. Each has /proc/<pid>/{cgroup,cwd (symlink),stat,status,...}.
+// Application endpoint: GET /api/applications?sort=<json field>&order=asc|desc&filter=<regex>.
+//
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
 // container sockets, fake GPU reader) as new fields on Machine.
@@ -71,6 +78,13 @@ func New(t *testing.T, fixture string) *Machine {
 		dst := filepath.Join(root, rel)
 		if info.IsDir() {
 			return os.MkdirAll(dst, 0o755)
+		}
+		if info.Mode()&os.ModeSymlink != 0 { // recorded /proc/<pid>/cwd links
+			target, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(target, dst)
 		}
 		b, err := os.ReadFile(p)
 		if err != nil {

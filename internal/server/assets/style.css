@@ -9,3 +9,9 @@ td.cmd { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; }
 .scroll { overflow-x: auto; }
 #filter-error { color: #b00; margin-left: 8px; }
 @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+tr.app-row { cursor: pointer; }
+tr.app-row:hover { background: rgba(128,128,128,.15); }
+tr.drilldown > td { padding-left: 24px; }
+tr.drilldown table { width: auto; }
+td.cmd-full { white-space: pre-wrap; word-break: break-all; }
+#app-filter-error { color: #b00; margin-left: 8px; }

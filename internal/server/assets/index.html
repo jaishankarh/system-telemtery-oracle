@@ -9,6 +9,10 @@
 <body>
 <h1>sys-telemetry-app</h1>
 <p id="status">waiting for first sample</p>
+<section id="applications"><h2>Applications</h2>
+<input id="app-filter" type="search" placeholder="filter by name or command" aria-label="filter applications">
+<span id="app-filter-error"></span>
+<div class="scroll"><table id="app-table"><thead><tr></tr></thead><tbody></tbody></table></div></section>
 <section><h2>CPU</h2><pre id="cpu"></pre></section>
 <section><h2>RAM</h2><pre id="ram"></pre></section>
 <section><h2>Swap</h2><pre id="swap"></pre></section>

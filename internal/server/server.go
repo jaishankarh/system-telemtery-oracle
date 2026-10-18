@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
 )
 
 //go:embed assets
@@ -18,14 +19,22 @@ var assets embed.FS
 // Server holds the latest Sample and serves it.
 type Server struct {
 	latest   atomic.Pointer[collector.Sample]
+	apps     atomic.Pointer[[]grouping.Application] // grouped from latest, same moment
+	grouper  *grouping.Grouper
 	interval time.Duration
 }
 
 // New creates a Server that reports the given sampling interval.
-func New(interval time.Duration) *Server { return &Server{interval: interval} }
+func New(interval time.Duration, g *grouping.Grouper) *Server {
+	return &Server{interval: interval, grouper: g}
+}
 
 // Update publishes a new latest Sample.
-func (s *Server) Update(sample collector.Sample) { s.latest.Store(&sample) }
+func (s *Server) Update(sample collector.Sample) {
+	apps := s.grouper.Group(sample.Processes)
+	s.apps.Store(&apps)
+	s.latest.Store(&sample)
+}
 
 // Handler returns the HTTP handler: /api/system, /api/info and the dashboard.
 func (s *Server) Handler() http.Handler {
@@ -41,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, map[string]any{"interval_seconds": s.interval.Seconds()})
 	})
 	mux.HandleFunc("/api/processes", s.processes)
+	mux.HandleFunc("/api/applications", s.applications)
 	sub, _ := fs.Sub(assets, "assets")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	return mux

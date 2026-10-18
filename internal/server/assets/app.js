@@ -85,3 +85,84 @@ buildHeader();
 document.getElementById("filter").addEventListener("input", refreshProcesses);
 refreshProcesses();
 setInterval(refreshProcesses, 2000);
+
+// Applications view (default): sorting and filtering are done by /api/applications.
+const APP_COLUMNS = [
+  ["name", "Application", "text"], ["kind", "Kind", "text"],
+  ["rss_bytes", "RSS", "bytes"], ["pss_bytes", "PSS", "bytes"], ["swap_bytes", "Swap", "bytes"],
+  ["cpu_percent", "CPU %", "pct"], ["disk_read_bytes_per_sec", "Read/s", "bytes"],
+  ["disk_write_bytes_per_sec", "Write/s", "bytes"], ["process_count", "Procs", "n"],
+  ["primary_pids", "Primary PIDs", "pids"],
+];
+const appView = { sort: "pss_swap", order: "desc", open: new Set() };
+function buildAppHeader() {
+  const tr = document.querySelector("#app-table thead tr");
+  APP_COLUMNS.forEach(([key, label, kind]) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    th.dataset.key = key;
+    if (kind === "text" || kind === "pids") th.className = "text";
+    if (kind !== "pids") th.onclick = () => {
+      appView.order = appView.sort === key && appView.order === "desc" ? "asc" : (appView.sort === key ? "desc" : (kind === "text" ? "asc" : "desc"));
+      appView.sort = key;
+      refreshApplications();
+    };
+    tr.appendChild(th);
+  });
+}
+function appRow(a) {
+  const tr = document.createElement("tr");
+  tr.className = "app-row";
+  tr.onclick = () => { appView.open.has(a.id) ? appView.open.delete(a.id) : appView.open.add(a.id); refreshApplications(); };
+  APP_COLUMNS.forEach(([key, , kind]) => {
+    const td = document.createElement("td");
+    let v = key === "primary_pids" ? a.primary_pids.join(", ") : a[key];
+    if (key === "name") v = (appView.open.has(a.id) ? "\u25BE " : "\u25B8 ") + v;
+    td.textContent = kind === "pids" ? v : cell(v, kind);
+    if (kind === "text" || kind === "pids") td.className = "text";
+    tr.appendChild(td);
+  });
+  return tr;
+}
+function drilldown(a) {
+  const tr = document.createElement("tr");
+  tr.className = "drilldown";
+  const td = document.createElement("td");
+  td.colSpan = APP_COLUMNS.length;
+  td.className = "text";
+  const t = document.createElement("table");
+  a.processes.forEach(p => {
+    const r = document.createElement("tr");
+    [p.pid, p.user, p.subgroup || "", cell(p.pss_bytes, "bytes"), cell(p.swap_bytes, "bytes"), p.cwd || "", p.command].forEach((v, i) => {
+      const c = document.createElement("td");
+      c.textContent = v;
+      c.className = i >= 5 ? "text cmd-full" : (i === 1 || i === 2 ? "text" : "");
+      if (i === 5) c.title = "working directory " + p.cwd + (p.cgroup ? "; cgroup " + p.cgroup : "");
+      r.appendChild(c);
+    });
+    t.appendChild(r);
+  });
+  td.appendChild(t);
+  tr.appendChild(td);
+  return tr;
+}
+async function refreshApplications() {
+  const q = new URLSearchParams({ sort: appView.sort, order: appView.order, filter: document.getElementById("app-filter").value });
+  const err = document.getElementById("app-filter-error");
+  try {
+    const r = await fetch("/api/applications?" + q);
+    if (!r.ok) { err.textContent = (await r.text()).trim(); return; }
+    err.textContent = "";
+    const l = await r.json();
+    document.querySelectorAll("#app-table th").forEach(th => {
+      th.textContent = APP_COLUMNS.find(c => c[0] === th.dataset.key)[1] + (th.dataset.key === appView.sort ? (appView.order === "desc" ? " \u25BE" : " \u25B4") : "");
+    });
+    const rows = [];
+    l.applications.forEach(a => { rows.push(appRow(a)); if (appView.open.has(a.id)) rows.push(drilldown(a)); });
+    document.querySelector("#app-table tbody").replaceChildren(...rows);
+  } catch (e) { err.textContent = "disconnected"; }
+}
+buildAppHeader();
+document.getElementById("app-filter").addEventListener("input", refreshApplications);
+refreshApplications();
+setInterval(refreshApplications, 2000);

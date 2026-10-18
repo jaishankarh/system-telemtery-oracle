@@ -1,0 +1,7 @@
+Name:	firefox
+Tgid:	200
+Pid:	200
+Uid:	1000	1000	1000	1000
+VmRSS:	400000 kB
+VmSwap:	100000 kB
+Threads:	4
