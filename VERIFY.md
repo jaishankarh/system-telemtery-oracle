@@ -131,6 +131,17 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] Generate swap activity (e.g. `stress-ng --vm 2 --vm-bytes 90%` for 30s) and check swap-in/out rates and CPU % move in the dashboard
 - [ ] Config: write `/etc/sys-telemetry-app/config.toml` with `port = 9292` and `interval = "3s"`; a plain `run` uses them (`curl 127.0.0.1:9292/api/info` shows `interval_seconds: 3`); `--port`/`--interval` flags override it; `--interval 500ms` is rejected
 
+## Ticket 20: Footprint budget check
+
+Budget: < 30 MB RAM (peak VmRSS) and < 0.5% average CPU over 30 minutes, no dashboard open. `scripts/footprint.sh` measures from outside by sampling /proc/<pid>; it starts the binary itself unless you pass `--pid`.
+
+- [ ] `make build` and `sudo true` ready; put the laptop under normal heavy load (Docker stacks up, Cursor, browsers with many tabs) and do NOT open the dashboard
+- [ ] Quick smoke first (1 minute): `sudo scripts/footprint.sh --duration 60 --interval 5` prints `samples: ...`, a `RAM  peak ... MB` line, a `CPU  avg ...%` line, and ends with PASS or FAIL (first minute includes startup, so CPU may read slightly high)
+- [ ] The real run (30 min): `sudo scripts/footprint.sh` (defaults: 1800 s, every 10 s, `dist/sys-telemetry-app-linux-amd64`). Expected: `RAM peak < 30 MB: PASS`, `CPU avg < 0.5%: PASS`, final line `PASS`. Paste the output into issue #20
+- [ ] Cross-check against an already running instance: `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191 &` then `sudo scripts/footprint.sh --pid $(pgrep -f 'sys-telemetry-app.* run' | head -1) --duration 300`; same verdict expected
+- [ ] Confirm no dashboard client was attached: `ss -tnp | grep 9191` shows no established connections during the run
+- [ ] If FAIL: note which budget, and `sudo cat /proc/$(pgrep -f sys-telemetry-app | head -1)/status | grep -E 'VmRSS|VmHWM|Threads'`; a follow-up ticket is needed (the sandbox run of the same script read ~0.6% CPU over 20 s including startup, so CPU is the one to watch)
+
 ## Ticket 3: Processes view
 
 - [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 report`: a "Top processes by PSS + swap" table lists 15 rows (PID, USER, PSS, SWAP, RSS, CPU%, COMMAND). Browser/editor/Docker processes you know are running appear near the top; usernames are names, not numbers
