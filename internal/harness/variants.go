@@ -33,6 +33,7 @@ func NewModern(t *testing.T) *Machine {
 	m.WriteFile("/proc/diskstats", "   259       0 nvme0n1 100 0 2000 10 100 0 4000 10 0 20 20\n")
 	m.WriteFile("/sys/block/zram0/stat", "1 0 8 1 1 0 8 1 0 1 1\n") // lets the Advisor measure Compressed Swap traffic
 	m.WriteFile("/sys/block/nvme0n1/size", "1000000\n")
+	m.WriteFile("/proc/sys/vm/swappiness", "60\n")
 	m.WriteFile("/sys/fs/cgroup/cgroup.controllers", "cpuset cpu io memory pids\n")
 	m.WriteFile("/run/systemd/system/.keep", "")
 	m.Docker.Add(DockerContainer{ID: strings.Repeat("ab", 32), Name: "web"}) // brings up the Docker socket
