@@ -81,19 +81,7 @@ func (d *DevBuild) projectRoot(cwd string, c *Context) string {
 	if r, ok := d.roots[cwd]; ok {
 		return r
 	}
-	root := cwd
-walk:
-	for dir := path.Clean(cwd); ; dir = path.Dir(dir) {
-		for _, mk := range vcsMarkers {
-			if c.Machine.Exists(path.Join(dir, mk)) {
-				root = dir
-				break walk
-			}
-		}
-		if dir == "/" || dir == "." {
-			break
-		}
-	}
+	root := ProjectRoot(c.Machine, cwd)
 	d.roots[cwd] = root
 	return root
 }

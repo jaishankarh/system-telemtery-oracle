@@ -84,6 +84,9 @@ func printSnapshot(w io.Writer, s advisor.Snapshot) {
 		}
 		if a.Change != nil {
 			fmt.Fprintf(w, "  Change (%s, %s):\n%s\n", a.Change.Kind, a.Change.Target, a.Change.Content)
+			if a.Change.Note != "" {
+				fmt.Fprintf(w, "  Note: %s\n", a.Change.Note)
+			}
 		}
 	}
 	for _, p := range s.Pending {

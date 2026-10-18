@@ -65,7 +65,7 @@ func (a *Advisor) Observe(s collector.Sample, apps []grouping.Application) {
 	defer a.mu.Unlock()
 	now := s.Time
 	a.now = now
-	in := &Input{Now: now, Window: a.cfg.Window, Cfg: a.cfg, Sample: s, Apps: apps}
+	in := &Input{Now: now, Machine: a.m, Window: a.cfg.Window, Cfg: a.cfg, Sample: s, Apps: apps}
 	in.PSI, in.PSIReason = readPSI(a.m)
 	in.Swappiness = readSwappiness(a.m)
 	in.Swap = a.swap.observe(a.m, now, s.Swap.Disk != nil, s.Swap.Compressed != nil,

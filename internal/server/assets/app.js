@@ -242,7 +242,7 @@ function adviceItem(a, presets) {
     btn.textContent = "Copy";
     btn.onclick = () => navigator.clipboard.writeText(a.change.content).then(() => { btn.textContent = "Copied"; });
     el.append(where, pre, btn);
-    if (a.change.note) { const n = document.createElement("p"); n.textContent = a.change.note; el.append(n); }
+    if (a.change.note) { const n = document.createElement("p"); n.className = "change-note"; n.textContent = a.change.note; el.append(n); }
   }
   el.append(adviceControls(a, presets));
   return el;

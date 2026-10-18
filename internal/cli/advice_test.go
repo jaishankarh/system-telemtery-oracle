@@ -38,6 +38,7 @@ type adviceDoc struct {
 			Kind    string `json:"kind"`
 			Target  string `json:"target"`
 			Content string `json:"content"`
+			Note    string `json:"note"`
 		} `json:"change"`
 	} `json:"advice"`
 	Pending []struct {
