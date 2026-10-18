@@ -44,3 +44,14 @@ Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build
 - [ ] Dashboard at http://127.0.0.1:9191: Processes table shows all 12 columns; clicking each header sorts (arrow shows direction, second click reverses); typing a PID, a name or a regex filters live; a bad regex shows an error beside the box
 - [ ] Start something that writes to disk (`dd if=/dev/zero of=/tmp/x bs=1M count=2000 oflag=direct`) and watch its Write/s column rise; start `yes > /dev/null` and watch CPU % near 100
 - [ ] PSS/Swap refresh only every ~10s (watch a process allocating memory: RSS moves every 2s, PSS/Swap in steps of 10s)
+
+## Ticket 4: Applications view and grouping
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 report`: an "Applications by PSS + swap" table (APPLICATION, KIND, PSS, SWAP, RSS, CPU%, PROCS, PRIMARY PIDS) appears above the process list; programs you launched from the desktop (browser, editor, terminal, music player) each have their own named row with kind systemd, snap or flatpak
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`, then `curl -s 127.0.0.1:9191/api/applications | head -c 2000`: each Application has name, kind, pids, primary_pids, process_count, rss/pss/swap totals and a processes list with full command lines, cwd and cgroup
+- [ ] Every process exactly once: `curl -s 127.0.0.1:9191/api/applications | python3 -c 'import json,sys; a=json.load(sys.stdin)["applications"]; n=sum(x["process_count"] for x in a); print(n)'` equals the length of `curl -s 127.0.0.1:9191/api/processes | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["processes"]))'` (allow +-a few for processes starting or exiting between calls)
+- [ ] Totals add up: the pss_bytes of one Application equals the sum of pss_bytes in its processes; spot-check one against `sudo grep Pss /proc/<pid>/smaps_rollup`
+- [ ] "Other" is small or absent: it holds only processes with no executable name; "Kernel threads" holds the [kworker]/[ksoftirqd] entries
+- [ ] Sorting: `?sort=cpu_percent&order=desc` and `?sort=name&order=asc` reorder rows; `?sort=nope` is HTTP 400; `?filter=firefox|chrome` narrows to matching Applications
+- [ ] Dashboard at http://127.0.0.1:9191: the Applications table is the first view and sorted by PSS + swap; clicking a header sorts (arrow shows direction); clicking a row expands its Processes with PID, user, PSS, swap, working directory and the full command line; the expansion survives the 2s refresh
+- [ ] Launch a program the tool has never heard of (for example a snap or Flatpak app, or `systemd-run --user --scope sleep 600`) and see it appear as its own Application without any config
