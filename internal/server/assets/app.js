@@ -204,6 +204,7 @@ function adviceItem(a) {
     pre.className = "change";
     pre.textContent = `# ${a.change.kind}: ${a.change.target}\n${a.change.content}`;
     el.append(pre);
+    if (a.change.note) { const n = document.createElement("p"); n.className = "change-note"; n.textContent = a.change.note; el.append(n); }
   }
   return el;
 }

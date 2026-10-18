@@ -66,3 +66,27 @@ func (m *Machine) bumpVmstat(add map[string]uint64) {
 	}
 	m.WriteFile("/proc/vmstat", strings.Join(lines, "\n"))
 }
+
+// AddProcessCPU adds CPU time to a recorded process: ticks of 1/100 s added to
+// the utime field of /proc/<pid>/stat. 200 ticks per 2 s interval is one full core.
+func (m *Machine) AddProcessCPU(pid int, ticks uint64) {
+	m.t.Helper()
+	path := fmt.Sprintf("/proc/%d/stat", pid)
+	b := m.ReadFile(path)
+	s := string(b)
+	c := strings.LastIndexByte(s, ')')
+	f := strings.Fields(s[c+1:]) // f[0] is field 3; utime is field 14
+	n, _ := strconv.ParseUint(f[11], 10, 64)
+	f[11] = strconv.FormatUint(n+ticks, 10)
+	m.WriteFile(path, s[:c+1]+" "+strings.Join(f, " ")+"\n")
+}
+
+// ReadFileOrEmpty returns a file's content, or "" when it does not exist, so a
+// test can show that the program wrote nothing.
+func (m *Machine) ReadFileOrEmpty(path string) string {
+	s, err := m.tryRead(path)
+	if err != nil {
+		return ""
+	}
+	return s
+}
