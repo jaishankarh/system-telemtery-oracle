@@ -33,6 +33,19 @@
 // nothing can name. Each has /proc/<pid>/{cgroup,cwd (symlink),stat,status,...}.
 // Application endpoint: GET /api/applications?sort=<json field>&order=asc|desc&filter=<regex>.
 //
+// Fixture "laptop-live" is the laptop fixture plus /proc/pressure/{cpu,memory,io} and
+// /proc/diskstats (nvme0n1 with a partition, loop0, zram0). Live API: GET /api/live,
+// /api/live/stream (SSE), /api/live/stats (see internal/server/live.go); tests in
+// internal/server/live_test.go show how to open a stream.
+//
+// Container runtimes: m.Docker.Add(harness.DockerContainer{...}) and
+// m.Containerd.Add(harness.ContainerdContainer{...}) create fake sockets
+// (Docker Engine API; containerd gRPC) on first use. m.AddProcess(pid, ppid,
+// comm, cmdline, cgroup, pssKB) adds a recorded process, for example one
+// whose cgroup path names a container. Container and Pod Applications carry
+// a "container" object in /api/applications (runtime, started_by,
+// memory_limit_bytes, containers).
+//
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
 // container sockets, fake GPU reader) as new fields on Machine.
@@ -62,6 +75,11 @@ type Machine struct {
 	Clock *FakeClock
 	// Host records what the program would change (OOM score, systemd unit); nothing is really written.
 	Host *FakeHost
+	// Docker and Containerd are fake container-runtime sockets. A runtime
+	// nothing was added to has no socket, like a machine without it.
+	Docker     *FakeDocker
+	Containerd *FakeContainerd
+	socks      *sockets
 }
 
 // New creates a fake machine from testdata/fixtures/<fixture>.
@@ -98,11 +116,13 @@ func New(t *testing.T, fixture string) *Machine {
 	if err := os.MkdirAll(filepath.Join(root, "state"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost()}
+	socks := newSockets(t)
+	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost(),
+		Docker: &FakeDocker{s: socks}, Containerd: &FakeContainerd{s: socks}, socks: socks}
 }
 
 func (m *Machine) machine() machine.Machine {
-	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host}
+	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, Dial: m.socks.dial}
 }
 
 // WriteFile creates or replaces a file at an absolute system path.

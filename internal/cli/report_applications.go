@@ -5,7 +5,6 @@ import (
 	"io"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
-	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
 )
 
 const topApplicationCount = 15
@@ -15,7 +14,7 @@ func topApplications(w io.Writer, env Env, s collector.Sample) {
 	if len(s.Processes) == 0 {
 		return
 	}
-	apps := grouping.Default(env.Machine).Group(s.Processes) // already ordered by PSS + swap
+	apps := newGrouper(env).Group(s.Processes) // already ordered by PSS + swap
 	if len(apps) > topApplicationCount {
 		apps = apps[:topApplicationCount]
 	}

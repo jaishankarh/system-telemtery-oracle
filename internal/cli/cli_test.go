@@ -93,7 +93,8 @@ func TestMissingSourcesAreReportedNotFatal(t *testing.T) {
 	if s.Swap.Disk != nil || s.Swap.Compressed != nil || s.CPU.Load1 != nil || s.Memory == nil {
 		t.Fatalf("unexpected %+v", s)
 	}
-	if strings.Join(s.Missing, ",") != "/proc/loadavg,/proc/swaps" {
+	// this fixture has no PSI or diskstats, so those are reported too
+	if strings.Join(s.Missing, ",") != "/proc/diskstats,/proc/loadavg,/proc/pressure,/proc/swaps" {
 		t.Fatalf("missing = %v", s.Missing)
 	}
 }

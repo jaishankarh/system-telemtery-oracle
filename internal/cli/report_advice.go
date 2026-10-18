@@ -10,7 +10,6 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/advisor"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
-	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
 )
 
 // adviceSection prints current Advice. Sustained needs a window of history, so
@@ -25,7 +24,7 @@ func adviceSection(w io.Writer, env Env, cfg config.Config, first, second collec
 		return
 	}
 	adv := advisor.New(env.Machine, cfg.Advisor, advisor.DefaultRules())
-	g := grouping.Default(env.Machine)
+	g := newGrouper(env)
 	adv.Observe(first, g.Group(first.Processes))
 	adv.Observe(second, g.Group(second.Processes))
 	snap := adv.Snapshot()
