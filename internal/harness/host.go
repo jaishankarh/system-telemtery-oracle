@@ -2,6 +2,7 @@ package harness
 
 import (
 	"errors"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
 	"sync"
 )
 
@@ -95,3 +96,19 @@ func (h *FakeHost) Systemctl(args ...string) error {
 	return nil
 }
 func (h *FakeHost) Executable() (string, error) { return h.exe, nil }
+
+// FakeGPU is the fake NVML reader: it returns whatever devices the test set.
+type FakeGPU struct {
+	mu   sync.Mutex
+	devs []gpu.Device
+}
+
+// Set replaces the NVIDIA GPUs on the fake machine (none by default).
+func (f *FakeGPU) Set(d ...gpu.Device) { f.mu.Lock(); f.devs = d; f.mu.Unlock() }
+
+// Read implements gpu.Reader.
+func (f *FakeGPU) Read() []gpu.Device {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]gpu.Device(nil), f.devs...)
+}

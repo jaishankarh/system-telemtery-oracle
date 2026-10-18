@@ -41,6 +41,8 @@
 // /api/live/stream (SSE), /api/live/stats (see internal/server/live.go); tests in
 // internal/server/live_test.go show how to open a stream.
 //
+// GPUs: m.GPU.Set(gpu.Device{...}) puts NVIDIA GPUs on the machine (the fake NVML
+// reader); AMD/Intel GPUs are sysfs files, e.g. m.WriteFile("/sys/class/drm/card0/device/vendor", "0x1002\n").
 // Container runtimes: m.Docker.Add(harness.DockerContainer{...}) and
 // m.Containerd.Add(harness.ContainerdContainer{...}) create fake sockets
 // (Docker Engine API; containerd gRPC) on first use. m.AddProcess(pid, ppid,
@@ -81,6 +83,7 @@ import (
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/cli"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/history"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
@@ -92,6 +95,10 @@ type Machine struct {
 	Clock *FakeClock
 	// Host records what the program would change (OOM score, systemd unit); nothing is really written.
 	Host *FakeHost
+	// GPU is the fake NVIDIA reader (NVML); use GPU.Set to put NVIDIA GPUs on the machine.
+	GPU *FakeGPU
+	// realGPU, when set, replaces the fake: the NVIDIA reader this build really ships.
+	realGPU gpu.Reader
 	// Docker and Containerd are fake container-runtime sockets. A runtime
 	// nothing was added to has no socket, like a machine without it.
 	Docker     *FakeDocker
@@ -135,11 +142,11 @@ func New(t *testing.T, fixture string) *Machine {
 	}
 	socks := newSockets(t)
 	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost(),
-		Docker: &FakeDocker{s: socks}, Containerd: &FakeContainerd{s: socks}, socks: socks}
+		Docker: &FakeDocker{s: socks}, Containerd: &FakeContainerd{s: socks}, socks: socks, GPU: &FakeGPU{}}
 }
 
 func (m *Machine) machine() machine.Machine {
-	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, Dial: m.socks.dial}
+	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, Dial: m.socks.dial, GPU: m.gpuReader()}
 }
 
 // WriteFile creates or replaces a file at an absolute system path.
@@ -320,4 +327,16 @@ func (p *Program) Tick() {
 func (m *Machine) tryRead(path string) (string, error) {
 	b, err := os.ReadFile(filepath.Join(m.Root, path))
 	return string(b), err
+}
+
+// UseBuildGPUReader swaps the fake NVIDIA reader for the one this build of the
+// program ships (gpu.NewNVML): in the default static build it reports that
+// NVIDIA support needs the nvml build. Use it to test that behaviour.
+func (m *Machine) UseBuildGPUReader() { m.realGPU = gpu.NewNVML() }
+
+func (m *Machine) gpuReader() gpu.Reader {
+	if m.realGPU != nil {
+		return m.realGPU
+	}
+	return m.GPU
 }

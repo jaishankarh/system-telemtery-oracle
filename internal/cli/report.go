@@ -55,6 +55,9 @@ func report(env Env, cfg config.Config, col collector.Collector) int {
 	} else {
 		fmt.Fprintln(w, "Swap-in/out rates unavailable")
 	}
+	for _, g := range s.GPUs {
+		fmt.Fprintf(w, "GPU  %s (%s)  util %s  temp %s  VRAM %s\n", g.Name, g.Vendor, gpuPct(g.UtilPercent), gpuTemp(g.TempC), gpuVRAM(g.VRAMUsedBytes, g.VRAMTotalBytes))
+	}
 	adviceSection(w, env, cfg, first, s)
 	topApplications(w, env, s)
 	topProcesses(w, s)
@@ -125,6 +128,27 @@ func mibp(b *uint64) string {
 // oneLine keeps a command line with embedded newlines on one report row.
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(s, "\n", " ")), " ")
+}
+
+func gpuPct(v *float64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.0f%%", *v)
+}
+
+func gpuTemp(v *float64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.0f C", *v)
+}
+
+func gpuVRAM(used, total *uint64) string {
+	if used == nil || total == nil {
+		return "n/a"
+	}
+	return gib(*used) + " of " + gib(*total)
 }
 
 // unavailableSection lists the data this machine cannot provide, with the

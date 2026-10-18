@@ -37,6 +37,9 @@ async function refresh() {
     const r = rates(w.in_pages_per_sec, w.out_pages_per_sec);
     if (r && lines.length) lines.push(r);
     show("swap", lines.length ? lines.join("\n") : null);
+    const gs = s.gpus || [];
+    show("gpu", gs.length ? gs.map(g =>
+      `${g.name} (${g.vendor})  util ${g.util_percent == null ? "n/a" : g.util_percent.toFixed(0) + "%"}  temp ${g.temperature_celsius == null ? "n/a" : g.temperature_celsius.toFixed(0) + " C"}  VRAM ${g.vram_total_bytes == null ? "n/a" : gib(g.vram_used_bytes) + " of " + gib(g.vram_total_bytes)}`).join("\n") : null);
   } catch (e) {
     document.getElementById("status").textContent = "disconnected";
   }

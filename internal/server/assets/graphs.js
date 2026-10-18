@@ -26,6 +26,12 @@ const CHARTS = [
   { id: "swapio", title: "Swap-in / swap-out", unit: "pages/s", series: [
     { label: "swap-in", key: "swap_in_pages_per_sec", color: "#2a7de1" },
     { label: "swap-out", key: "swap_out_pages_per_sec", color: "#d1342f" }] },
+  { id: "gpu", title: "GPU", unit: "% / \u00b0C", series: [
+    { label: "GPU utilisation %", key: "gpu_util_percent", color: "#2a7de1" },
+    { label: "GPU temperature \u00b0C", key: "gpu_temperature_celsius", color: "#d1342f" }] },
+  { id: "vram", title: "GPU memory (VRAM)", unit: "GiB", series: [
+    { label: "VRAM used", key: "gpu_vram_used_bytes", scale: 1 / GIB, color: "#8a55d6" },
+    { label: "VRAM total", key: "gpu_vram_total_bytes", scale: 1 / GIB, color: "#888888" }] },
 ];
 const WINDOW_MS = 300 * 1000;
 let points = [];

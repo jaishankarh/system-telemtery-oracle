@@ -19,11 +19,13 @@ jobs:
         run: make test
       - name: Build static binaries (amd64, arm64)
         run: make build
+      - name: Build nvml variants (amd64, arm64; NOT static, NVIDIA support)
+        run: make build-nvml
       - name: Checksums and install script
         run: |
           cp scripts/install.sh dist/install.sh
           cd dist
-          sha256sum sys-telemetry-app-linux-amd64 sys-telemetry-app-linux-arm64 > SHA256SUMS
+          sha256sum sys-telemetry-app-linux-amd64 sys-telemetry-app-linux-arm64 sys-telemetry-app-nvml-linux-amd64 sys-telemetry-app-nvml-linux-arm64 > SHA256SUMS
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -32,5 +34,7 @@ jobs:
           files: |
             dist/sys-telemetry-app-linux-amd64
             dist/sys-telemetry-app-linux-arm64
+            dist/sys-telemetry-app-nvml-linux-amd64
+            dist/sys-telemetry-app-nvml-linux-arm64
             dist/SHA256SUMS
             dist/install.sh
