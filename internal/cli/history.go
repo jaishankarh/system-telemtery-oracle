@@ -169,6 +169,9 @@ func startHistory(env Env, ctx context.Context, g *grouping.Grouper, first colle
 		fmt.Fprintln(env.Stderr, "warning: History disabled:", err)
 		return &killableRecorder{ctx: ctx}
 	}
+	if kept := rec.MovedAside(); kept != "" {
+		fmt.Fprintf(env.Stderr, "warning: the old History file could not be read; it was kept as %s and History starts afresh\n", kept)
+	}
 	if unclean, at := rec.PreviousSession(); unclean {
 		when := "an unknown time"
 		if !at.IsZero() {

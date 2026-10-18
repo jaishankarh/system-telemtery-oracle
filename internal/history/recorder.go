@@ -2,7 +2,7 @@ package history
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -64,6 +64,7 @@ type Recorder struct {
 	prevUnclean bool
 	prevEndedAt time.Time
 	closed      bool
+	movedAside  string
 	lock        *os.File // flock on the state dir while this instance owns History
 }
 
@@ -88,7 +89,22 @@ func open(m machine.Machine, g *grouping.Grouper, path string) (*Recorder, error
 	r := &Recorder{m: m, grouper: g, dirty: map[int64][]byte{}, gate: make(chan struct{}, 1)}
 	now := m.Clock.Now()
 	h := header{Session: 1, State: stateRunning, StartedNs: now.UnixNano()}
-	if snap, err := readSnapshot(path); err == nil {
+	if st, err := os.Stat(path); err == nil && st.Size() != FileSize {
+		if err := r.moveAside(path); err != nil {
+			return nil, err
+		}
+	}
+	snap, err := readSnapshot(path)
+	if errors.Is(err, errBadHeader) {
+		if err := r.moveAside(path); err != nil {
+			return nil, err
+		}
+		snap, err = nil, errNoHistory
+	}
+	if err != nil && !errors.Is(err, errNoHistory) {
+		return nil, err // unreadable for another reason (permissions, I/O): never overwrite it
+	}
+	if err == nil {
 		defer snap.Close()
 		h.Session = snap.hdr.Session + 1
 		if snap.hdr.State == stateRunning {
@@ -107,10 +123,6 @@ func open(m machine.Machine, g *grouping.Grouper, path string) (*Recorder, error
 		if err != nil {
 			return nil, err
 		}
-		if st, err := f.Stat(); err != nil || st.Size() != FileSize {
-			f.Close()
-			return nil, fmt.Errorf("%s has unexpected size", path)
-		}
 		f.Chmod(0o600)
 		r.f = f
 	} else {
@@ -127,6 +139,25 @@ func open(m machine.Machine, g *grouping.Grouper, path string) (*Recorder, error
 	}
 	r.lastFlush = now
 	return r, nil
+}
+
+// MovedAside is where an unreadable ring file was kept when this session
+// started a fresh one; empty when nothing was moved.
+func (r *Recorder) MovedAside() string {
+	if r == nil {
+		return ""
+	}
+	return r.movedAside
+}
+
+// moveAside keeps a ring file this version cannot read as <name>.corrupt
+// (replacing an earlier one) instead of writing over it.
+func (r *Recorder) moveAside(path string) error {
+	if err := os.Rename(path, path+".corrupt"); err != nil {
+		return err
+	}
+	r.movedAside = path + ".corrupt"
+	return nil
 }
 
 func newestTime(s *snapshot, session uint64) time.Time {

@@ -210,3 +210,29 @@ func TestASecondInstanceOnTheSameStateDirRunsWithoutHistoryAndLeavesTheFirstAlon
 		t.Fatal("first instance lost its History")
 	}
 }
+
+func TestAnUnreadableHistoryFileIsMovedAsideNotWipedAndHistoryKeepsRunning(t *testing.T) {
+	cases := map[string]string{
+		"garbage of the wrong size": "not a ring file",
+		"right size, bad header":    strings.Repeat("\x00", history.FileSize),
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := harness.New(t, histFx)
+			m.WriteFile("state/"+history.FileName, content)
+			p := m.Start()
+			historyTicks(p, 6)
+			var s struct{ Oldest, Newest time.Time }
+			p.GetJSON("/api/history/span", &s)
+			if s.Newest.IsZero() {
+				t.Fatalf("History should have restarted on a fresh ring; stderr:\n%s", p.Stderr())
+			}
+			if got := m.ReadFile("state/" + history.FileName + ".corrupt"); got != content {
+				t.Fatalf("the unreadable file should be kept as history.ring.corrupt, got %d bytes", len(got))
+			}
+			if !strings.Contains(p.Stderr(), "history.ring.corrupt") {
+				t.Fatalf("stderr should say where the old file went:\n%s", p.Stderr())
+			}
+		})
+	}
+}

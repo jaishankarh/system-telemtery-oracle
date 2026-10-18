@@ -14,6 +14,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
@@ -171,6 +172,10 @@ type snapshot struct {
 
 var errNoHistory = errors.New("no History file")
 
+// errBadHeader: the file exists but is not a ring this version can read. It is
+// an errNoHistory for readers, but Open must not treat it as "create fresh over it".
+var errBadHeader = fmt.Errorf("%w: unreadable ring header", errNoHistory)
+
 func (s *snapshot) Close() {
 	if s != nil && s.f != nil {
 		s.f.Close()
@@ -216,12 +221,12 @@ func readSnapshot(path string) (*snapshot, error) {
 	hb := make([]byte, HeaderSize)
 	if _, err := io.ReadFull(f, hb); err != nil {
 		f.Close()
-		return nil, errNoHistory
+		return nil, errBadHeader
 	}
 	h, ok := decodeHeader(hb)
 	if !ok {
 		f.Close()
-		return nil, errNoHistory
+		return nil, errBadHeader
 	}
 	s := &snapshot{hdr: h, f: f}
 	s.samples, _ = indexRing(f, HeaderSize, SlotCount, SlotSize)
