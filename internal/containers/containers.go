@@ -6,7 +6,9 @@
 package containers
 
 import (
+	"context"
 	"sort"
+	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
@@ -62,14 +64,19 @@ var (
 	}
 )
 
+// DiscoverTimeout bounds one whole Discover, however many containers or hung sockets.
+const DiscoverTimeout = 8 * time.Second
+
 // Discover returns every running container the runtimes report, keyed by
 // container ID. A container known to Docker is reported by Docker, because
 // Docker also keeps its containers in containerd's "moby" namespace.
 func Discover(m machine.Machine) map[string]Info {
+	ctx, cancel := context.WithTimeout(context.Background(), DiscoverTimeout)
+	defer cancel()
 	out := map[string]Info{}
 	for _, group := range containerdSockets {
 		for _, sock := range group {
-			if list, ok := containerdList(m, sock); ok {
+			if list, ok := containerdList(ctx, m, sock); ok {
 				for _, in := range list {
 					out[in.ID] = in
 				}
@@ -78,7 +85,7 @@ func Discover(m machine.Machine) map[string]Info {
 		}
 	}
 	for _, sock := range dockerSockets {
-		if list, ok := dockerList(m, sock); ok {
+		if list, ok := dockerList(ctx, m, sock); ok {
 			for _, in := range list {
 				out[in.ID] = in
 			}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -80,6 +81,8 @@ type FakeDocker struct {
 	mu         sync.Mutex
 	containers []DockerContainer
 	started    bool
+	// Hung makes every request block until the test ends, as a wedged daemon does.
+	Hung atomic.Bool
 }
 
 // Add starts the fake daemon (first call) and adds a running container.
@@ -91,7 +94,16 @@ func (d *FakeDocker) Add(c DockerContainer) {
 	d.mu.Unlock()
 	if start {
 		mux := http.NewServeMux()
-		mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
+		hang := func(next http.HandlerFunc) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				if d.Hung.Load() {
+					<-r.Context().Done()
+					return
+				}
+				next(w, r)
+			}
+		}
+		mux.HandleFunc("/containers/json", hang(func(w http.ResponseWriter, r *http.Request) {
 			d.mu.Lock()
 			defer d.mu.Unlock()
 			var out []map[string]any
@@ -99,8 +111,8 @@ func (d *FakeDocker) Add(c DockerContainer) {
 				out = append(out, map[string]any{"Id": c.ID, "Names": []string{"/" + c.Name}, "Labels": c.Labels})
 			}
 			json.NewEncoder(w).Encode(out)
-		})
-		mux.HandleFunc("/containers/", func(w http.ResponseWriter, r *http.Request) {
+		}))
+		mux.HandleFunc("/containers/", hang(func(w http.ResponseWriter, r *http.Request) {
 			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/containers/"), "/json")
 			d.mu.Lock()
 			defer d.mu.Unlock()
@@ -113,7 +125,7 @@ func (d *FakeDocker) Add(c DockerContainer) {
 				}
 			}
 			http.NotFound(w, r)
-		})
+		}))
 		d.s.serve("/var/run/docker.sock", &http.Server{Handler: mux})
 	}
 }

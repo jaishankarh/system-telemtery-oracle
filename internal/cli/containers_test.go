@@ -3,6 +3,7 @@ package cli_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/harness"
 )
@@ -168,5 +169,24 @@ func TestReportListsContainers(t *testing.T) {
 	m.AddProcess(900, 1, "postgres", "postgres", "/docker/"+id1, 100000)
 	if out := m.Report(); !strings.Contains(out, "shop-db-1") || !strings.Contains(out, "container") {
 		t.Fatalf("report should list the Container:\n%s", out)
+	}
+}
+
+func TestAHungDockerSocketDoesNotDelaySamples(t *testing.T) {
+	m := harness.New(t, apps)
+	m.Docker.Add(harness.DockerContainer{ID: id1, Name: "shop-db-1"})
+	m.Docker.Hung.Store(true)
+	m.AddProcess(900, 1, "postgres", "postgres", "/docker/"+id1, 100000)
+	p := m.Start()
+	start := time.Now()
+	for i := 0; i < 5; i++ {
+		p.Tick()
+		var l struct {
+			Applications []struct{} `json:"applications"`
+		}
+		p.GetJSON("/api/applications", &l)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("5 samples with a hung Docker socket took %v", d)
 	}
 }

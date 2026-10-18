@@ -3,6 +3,8 @@ package grouping
 import (
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/containers"
@@ -36,14 +38,58 @@ type ContainerInfo struct {
 // Containers are found by the container ID in a Process's cgroup path (Docker,
 // containerd, CRI and systemd cgroup drivers all embed it); names and limits
 // come from the runtime sockets, asked once per sample.
+//
+// Asking the runtimes can be slow (one Docker call per container, a hung socket),
+// so it never happens on the sampling path: a background refresh repopulates the
+// map every containerTTL and Prepare reads the last answer. Only the very first
+// Prepare waits, briefly, so the first sample already names its containers.
 type ContainerPod struct {
-	byID map[string]containers.Info
+	byID map[string]containers.Info // used by Match; copied from cache in Prepare
+
+	mu       sync.Mutex
+	cache    map[string]containers.Info
+	fetched  time.Time
+	have     bool
+	inflight chan struct{} // non-nil while a refresh runs; closed when it ends
 }
+
+const (
+	containerTTL       = 15 * time.Second
+	containerFirstWait = 500 * time.Millisecond
+)
 
 func (*ContainerPod) Name() string { return "container / pod" }
 
-// Prepare asks the runtimes for the running containers. No runtime, no match.
-func (l *ContainerPod) Prepare(c *Context) { l.byID = containers.Discover(c.Machine) }
+// Prepare reads the cached running containers, starting a background refresh
+// when they are older than containerTTL. No runtime, no match.
+func (l *ContainerPod) Prepare(c *Context) {
+	now := c.Machine.Clock.Now()
+	l.mu.Lock()
+	if l.inflight == nil && (!l.have || now.Sub(l.fetched) >= containerTTL) {
+		done := make(chan struct{})
+		l.inflight = done
+		go func() {
+			found := containers.Discover(c.Machine)
+			l.mu.Lock()
+			l.cache, l.have, l.fetched = found, true, c.Machine.Clock.Now()
+			l.inflight = nil
+			l.mu.Unlock()
+			close(done)
+		}()
+	}
+	wait := l.inflight
+	first := !l.have
+	l.mu.Unlock()
+	if first && wait != nil {
+		select {
+		case <-wait:
+		case <-time.After(containerFirstWait):
+		}
+	}
+	l.mu.Lock()
+	l.byID = l.cache
+	l.mu.Unlock()
+}
 
 func (l *ContainerPod) Match(p *collector.Process, _ *Context) (Match, bool) {
 	if len(l.byID) == 0 {

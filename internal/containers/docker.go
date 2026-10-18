@@ -14,15 +14,19 @@ import (
 
 const maxContainers = 500
 
-func dockerGet(m machine.Machine, sock, path string, v any) error {
+func dockerGet(ctx context.Context, m machine.Machine, sock, path string, v any) error {
 	c := &http.Client{
-		Timeout: 3 * time.Second,
+		Timeout: 2 * time.Second,
 		Transport: &http.Transport{
 			DisableKeepAlives: true,
 			DialContext:       func(context.Context, string, string) (net.Conn, error) { return m.DialSocket(sock) },
 		},
 	}
-	resp, err := c.Get("http://docker" + path)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://docker"+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.Do(req)
 	if err != nil {
 		return err
 	}
@@ -34,16 +38,16 @@ func dockerGet(m machine.Machine, sock, path string, v any) error {
 }
 
 // dockerList reads running containers from the Docker Engine API.
-func dockerList(m machine.Machine, sock string) ([]Info, bool) {
+func dockerList(ctx context.Context, m machine.Machine, sock string) ([]Info, bool) {
 	var list []struct {
 		ID string `json:"Id"`
 	}
-	if err := dockerGet(m, sock, "/containers/json", &list); err != nil {
+	if err := dockerGet(ctx, m, sock, "/containers/json", &list); err != nil {
 		return nil, false
 	}
 	var out []Info
 	for i, c := range list {
-		if i >= maxContainers {
+		if i >= maxContainers || ctx.Err() != nil {
 			break
 		}
 		var d struct {
@@ -52,7 +56,7 @@ func dockerList(m machine.Machine, sock string) ([]Info, bool) {
 			HostConfig struct{ Memory int64 }
 			Config     struct{ Labels map[string]string }
 		}
-		if err := dockerGet(m, sock, "/containers/"+c.ID+"/json", &d); err != nil {
+		if err := dockerGet(ctx, m, sock, "/containers/"+c.ID+"/json", &d); err != nil {
 			continue // vanished between list and inspect
 		}
 		in := Info{ID: d.ID, Name: strings.TrimPrefix(d.Name, "/"), Runtime: RuntimeDocker,

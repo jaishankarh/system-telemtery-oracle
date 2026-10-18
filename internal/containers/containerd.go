@@ -24,15 +24,15 @@ const (
 	svcContainers = "/containerd.services.containers.v1.Containers/List"
 )
 
-func grpcCall(m machine.Machine, sock, method, namespace string) ([]byte, error) {
+func grpcCall(ctx context.Context, m machine.Machine, sock, method, namespace string) ([]byte, error) {
 	tr := &http.Transport{
 		DisableKeepAlives: true,
 		Protocols:         new(http.Protocols),
 		DialContext:       func(context.Context, string, string) (net.Conn, error) { return m.DialSocket(sock) },
 	}
 	tr.Protocols.SetUnencryptedHTTP2(true)
-	c := &http.Client{Transport: tr, Timeout: 5 * time.Second}
-	req, err := http.NewRequest("POST", "http://containerd"+method, bytes.NewReader([]byte{0, 0, 0, 0, 0}))
+	c := &http.Client{Transport: tr, Timeout: 3 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://containerd"+method, bytes.NewReader([]byte{0, 0, 0, 0, 0}))
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +69,8 @@ func grpcCall(m machine.Machine, sock, method, namespace string) ([]byte, error)
 }
 
 // containerdList reads running containers from every containerd namespace.
-func containerdList(m machine.Machine, sock string) ([]Info, bool) {
-	nsResp, err := grpcCall(m, sock, svcNamespaces, "")
+func containerdList(ctx context.Context, m machine.Machine, sock string) ([]Info, bool) {
+	nsResp, err := grpcCall(ctx, m, sock, svcNamespaces, "")
 	if err != nil {
 		return nil, false
 	}
@@ -88,7 +88,7 @@ func containerdList(m machine.Machine, sock string) ([]Info, bool) {
 		if ns == "" || ns == "moby" { // Docker's own namespace: Docker answers for those
 			continue
 		}
-		cResp, err := grpcCall(m, sock, svcContainers, ns)
+		cResp, err := grpcCall(ctx, m, sock, svcContainers, ns)
 		if err != nil {
 			continue
 		}

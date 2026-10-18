@@ -19,7 +19,7 @@ func TestHistoryQueriesOnAFullRingStayWithinTheMemoryBudget(t *testing.T) {
 	}
 	m := harness.New(t, histFx)
 	p := m.Start()
-	p.Interval = history.SampleEvery // one History sample per tick
+	p.Interval = history.SampleEvery       // one History sample per tick
 	historyTicks(p, history.SlotCount+200) // wraps: the oldest 200 samples are overwritten
 
 	var before, after runtime.MemStats
