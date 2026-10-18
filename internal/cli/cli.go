@@ -18,6 +18,7 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/history"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/selfguard"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/server"
@@ -30,6 +31,8 @@ type Env struct {
 	Stderr  io.Writer
 	// OnListen, if set, is called with the bound address once the server listens.
 	OnListen func(addr string)
+	// OnRecorder, if set, is called with the History event appender once it is open.
+	OnRecorder func(history.EventAppender)
 }
 
 // RealEnv is the production environment.
@@ -52,10 +55,12 @@ func Run(ctx context.Context, env Env, args []string) int {
 			return report(env, collector.NewLinux(env.Machine))
 		}
 		return run(ctx, env, cfg)
+	case "replay":
+		return replay(env, args)
 	case "install", "uninstall":
 		return installCmd(env, cmd)
 	default:
-		fmt.Fprintf(env.Stderr, "unknown command %q\nusage: sys-telemetry-app [run|report|install|uninstall] [--port N] [--interval D] [--config PATH]\n", cmd)
+		fmt.Fprintf(env.Stderr, "unknown command %q\nusage: sys-telemetry-app [run|report|replay|install|uninstall] [--port N] [--interval D] [--config PATH]\n", cmd)
 		return 2
 	}
 }
@@ -103,14 +108,17 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 	srv := server.New(cfg.Interval, grouping.Default(env.Machine))
 	first, _ := col.Collect()
 	srv.Update(first)
+	rec := startHistory(env, ctx, grouping.Default(env.Machine), first)
+	defer rec.Close()
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port)) // loopback only (ADR 0003)
 	if err != nil {
 		fmt.Fprintln(env.Stderr, "error:", err)
 		return 1
 	}
-	hs := &http.Server{Handler: withSelf(guard, srv.Handler()), ReadHeaderTimeout: 5 * time.Second}
+	hs := &http.Server{Handler: withSelf(guard, withHistory(rec.Recorder, srv.Handler())), ReadHeaderTimeout: 5 * time.Second}
 	go hs.Serve(ln)
+	defer announceInstance(env, ctx, ln.Addr().String())()
 	fmt.Fprintf(env.Stderr, "sys-telemetry-app listening on http://%s\n", ln.Addr())
 	if env.OnListen != nil {
 		env.OnListen(ln.Addr().String())
@@ -128,6 +136,7 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 		case <-tk.C():
 			guard.Check() // before publishing, so a published sample implies the check ran
 			if s, err := col.Collect(); err == nil {
+				rec.Observe(s) // before publishing, so a published sample implies it was recorded
 				srv.Update(s)
 			}
 		}
