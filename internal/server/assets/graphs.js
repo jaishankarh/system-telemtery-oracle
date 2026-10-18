@@ -37,6 +37,42 @@ const WINDOW_MS = 300 * 1000;
 let points = [];
 let charts = [];
 let es = null;
+let markerEvents = []; // Advice events: from /api/advice/events when Live, from History when in Replay
+let markerList = [];   // the ones inside the charted window, ready to draw
+const MARKER_COLORS = { advice_start: "#d1342f", advice_end: "#2a9d4b", advice_severity: "#e08a00" };
+// Advice start/end markers on the swap-in/swap-out chart (and listed below the charts in words).
+function markerPlugin() {
+  return { hooks: { draw: [u => {
+    const ctx = u.ctx, top = u.bbox.top, bottom = u.bbox.top + u.bbox.height;
+    ctx.save();
+    for (const m of markerList) {
+      const x = Math.round(u.valToPos(m.t, "x", true));
+      if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) continue;
+      ctx.strokeStyle = MARKER_COLORS[m.kind] || "#888";
+      ctx.lineWidth = 2 * devicePixelRatio;
+      ctx.setLineDash(m.kind === "advice_end" ? [4 * devicePixelRatio, 3 * devicePixelRatio] : []);
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+    }
+    ctx.restore();
+  }] } };
+}
+function refreshMarkers() {
+  const xs = points.map(p => Date.parse(p.time));
+  markerList = xs.length ? Replay.markers(markerEvents, Math.min(...xs), Math.max(...xs)) : [];
+  document.getElementById("marker-list").replaceChildren(...markerList.map(m => {
+    const li = document.createElement("li");
+    li.textContent = m.label;
+    li.style.color = MARKER_COLORS[m.kind] || "";
+    return li;
+  }));
+}
+async function loadLiveMarkers() {
+  try {
+    const r = await fetch("/api/advice/events", { cache: "no-store" });
+    if (r.ok) markerEvents = (await r.json()).events || [];
+  } catch (e) { /* markers are optional */ }
+  render();
+}
 
 function seriesData(chart) {
   const xs = points.map(p => Date.parse(p.time) / 1000);
@@ -65,13 +101,15 @@ function buildCharts() {
       scales: { x: { time: true }, y: { range: (_, lo, hi) => [0, Math.max(c.max || 0, hi || 1) * (c.max ? 1 : 1.1)] } },
       axes: [{ stroke: fg, grid: { stroke: grid } }, { stroke: fg, grid: { stroke: grid }, size: 50 }],
       series: [{}, ...c.series.map(s => ({ label: s.label, stroke: s.color, width: 1.5, spanGaps: false }))],
+      plugins: c.id === "swapio" ? [markerPlugin()] : [],
     }, seriesData(c), plot);
     return { c, box, u, plot };
   });
 }
 function render() {
   const now = points.length ? Date.parse(points[points.length - 1].time) : 0;
-  points = points.filter(p => Date.parse(p.time) >= now - WINDOW_MS);
+  if (!Replay.active()) points = points.filter(p => Date.parse(p.time) >= now - WINDOW_MS);
+  refreshMarkers();
   for (const ch of charts) {
     ch.box.hidden = !ch.c.series.some(s => points.some(p => p[s.key] != null));
     if (ch.box.hidden) continue;
@@ -85,7 +123,11 @@ function render() {
 function renderSplit() {
   const host = document.getElementById("split");
   const last = points[points.length - 1];
-  const apps = last ? last.top_apps : [];
+  let apps = last ? last.top_apps : [];
+  if (Replay.active()) { // the Applications recorded in History at the selected time
+    const at = Replay.state.atResult;
+    apps = at && at.sample ? at.sample.applications.filter(a => a.pss_bytes != null).slice(0, 10).map(a => ({ name: a.name, pss_bytes: a.pss_bytes, swap_bytes: a.swap_bytes || 0 })) : [];
+  }
   document.getElementById("split-box").hidden = apps.length === 0;
   const max = Math.max(1, ...apps.map(a => a.pss_bytes + a.swap_bytes));
   host.replaceChildren(...apps.map(a => {
@@ -115,10 +157,11 @@ async function loadAndStream() {
     points = d.points || [];
     render();
   } catch (e) { /* retried on the next connect */ }
+  loadLiveMarkers();
   openStream();
 }
 function openStream() {
-  if (es || document.hidden) return;
+  if (es || document.hidden || Replay.active()) return;
   es = new EventSource("/api/live/stream");
   es.onmessage = ev => {
     const p = JSON.parse(ev.data);
@@ -135,6 +178,19 @@ function closeStream() {
   document.getElementById("graph-status").textContent = "paused (tab hidden)";
 }
 buildCharts();
-document.addEventListener("visibilitychange", () => document.hidden ? closeStream() : loadAndStream());
+document.addEventListener("visibilitychange", () => document.hidden ? closeStream() : (Replay.active() ? null : loadAndStream()));
+setInterval(() => { if (!Replay.active() && !document.hidden) loadLiveMarkers(); }, 10000);
+// Called by timeslider.js. Replay draws the History series around the selected time; Live reloads the Live buffer.
+function showReplayGraphs(series) {
+  if (es) { es.close(); es = null; }
+  document.getElementById("graph-status").textContent = "replay";
+  points = series.points || [];
+  markerEvents = series.events || [];
+  render();
+}
+function showLiveGraphs() {
+  document.getElementById("graph-status").textContent = "live";
+  loadAndStream();
+}
 window.addEventListener("resize", render);
 if (!document.hidden) loadAndStream();

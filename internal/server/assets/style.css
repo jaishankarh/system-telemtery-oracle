@@ -40,3 +40,13 @@ td.cmd-full { white-space: pre-wrap; word-break: break-all; }
 #unavailable ul { margin: 0; padding-left: 1.2em; }
 #advice .advice-controls { margin: 4px 0; }
 #advice-hidden { margin: 4px 0; padding-left: 18px; }
+
+#timebar { position: sticky; top: 0; z-index: 5; background: inherit; padding: 6px 0; border-bottom: 1px solid rgba(128,128,128,.4); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#timebar input[type=range] { flex: 1 1 240px; min-width: 160px; }
+#time-label { font-weight: bold; font-variant-numeric: tabular-nums; }
+#time-range { font-size: 12px; opacity: .7; }
+#replay-banner { flex-basis: 100%; margin: 0; padding: 4px 8px; background: rgba(224,138,0,.18); border-left: 4px solid #e08a00; }
+.trunc { margin: 2px 0 6px; font-size: 12px; opacity: .85; }
+#marker-list { margin: 2px 0 6px; padding-left: 18px; font-size: 12px; }
+#advice-note { font-size: 12px; opacity: .85; }
+body.replaying #timebar { border-bottom-color: #e08a00; }

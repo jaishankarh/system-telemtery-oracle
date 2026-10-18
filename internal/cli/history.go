@@ -45,6 +45,7 @@ func withHistory(rec *history.Recorder, next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(w).Encode(res)
 	})
+	registerHistoryViews(mux, rec)
 	mux.Handle("/", next)
 	return mux
 }

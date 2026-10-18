@@ -9,19 +9,31 @@
 </head>
 <body>
 <h1>sys-telemetry-app</h1>
+<section id="timebar" aria-label="time slider">
+<label for="time-slider">Time</label>
+<input id="time-slider" type="range" min="0" max="1000" value="1000" step="1" disabled>
+<span id="time-label">Live</span>
+<button id="live-button" type="button" hidden>Back to Live</button>
+<span id="time-range"></span>
+<p id="replay-banner" hidden></p>
+</section>
 <p id="status">waiting for first sample</p>
 <section id="unavailable" hidden><h2>Unavailable on this machine</h2><ul id="unavailable-list"></ul></section>
 <section id="advice"><h2>Advice</h2>
+<p id="advice-note" hidden></p>
 <div id="advice-list"><p>waiting for first sample</p></div>
 <div id="advice-pending"></div>
 <ul id="advice-hidden"></ul>
 <ul id="advice-disabled"></ul></section>
 <section id="graphs"><h2>Graphs <span id="graph-status"></span></h2>
+<p id="graph-note"></p>
+<ul id="marker-list" aria-label="Advice markers"></ul>
 <div id="graph-grid"></div>
 <div id="split-box" hidden><h3>Top 10 Applications: RAM <small>(blue)</small> and swap <small>(red)</small></h3><div id="split"></div></div></section>
 <section id="applications"><h2>Applications</h2>
 <input id="app-filter" type="search" placeholder="filter by name or command" aria-label="filter applications">
 <span id="app-filter-error"></span>
+<p id="app-note" class="trunc" hidden></p>
 <div class="scroll"><table id="app-table"><thead><tr></tr></thead><tbody></tbody></table></div></section>
 <section hidden><h2>CPU</h2><pre id="cpu"></pre></section>
 <section hidden><h2>RAM</h2><pre id="ram"></pre></section>
@@ -30,9 +42,12 @@
 <section id="processes"><h2>Processes</h2>
 <input id="filter" type="search" placeholder="filter by PID, name or regex" aria-label="filter processes">
 <span id="filter-error"></span>
+<p id="proc-note" class="trunc" hidden></p>
 <div class="scroll"><table id="proc-table"><thead><tr></tr></thead><tbody></tbody></table></div></section>
 <script src="uplot.min.js"></script>
+<script src="replay.js"></script>
 <script src="app.js"></script>
 <script src="graphs.js"></script>
+<script src="timeslider.js"></script>
 </body>
 </html>
