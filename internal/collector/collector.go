@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/availability"
 )
 
 // Collector produces one Sample per call. Rates are derived from the previous
@@ -24,6 +25,8 @@ type Sample struct {
 	Memory  *Memory   `json:"memory"`
 	Swap    Swap      `json:"swap"`
 	Missing []string  `json:"missing"`
+	// Availability says which data is unavailable on this machine and why (ADR 0006).
+	Availability availability.Report `json:"availability"`
 	// Pressure (PSI) and Disks: see pressure.go. Pressure is nil without /proc/pressure.
 	Pressure *Pressure `json:"pressure"`
 	Disks    []Disk    `json:"disks"`

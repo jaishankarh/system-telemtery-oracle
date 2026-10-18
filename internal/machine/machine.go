@@ -91,3 +91,7 @@ type realTicker struct{ t *time.Ticker }
 
 func (r realTicker) C() <-chan time.Time { return r.t.C }
 func (r realTicker) Stop()               { r.t.Stop() }
+
+// ReadFileAt reads a path that is already real (for example under StateDir),
+// bypassing Root.
+func (m Machine) ReadFileAt(p string) ([]byte, error) { return os.ReadFile(p) }

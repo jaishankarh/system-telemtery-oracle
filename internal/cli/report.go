@@ -61,9 +61,7 @@ func report(env Env, cfg config.Config, col collector.Collector) int {
 	adviceSection(w, env, cfg, first, s)
 	topApplications(w, env, s)
 	topProcesses(w, s)
-	for _, p := range s.Missing {
-		fmt.Fprintf(w, "missing data source: %s\n", p)
-	}
+	unavailableSection(w, s)
 	return 0
 }
 
@@ -118,9 +116,6 @@ func topProcesses(w io.Writer, s collector.Sample) {
 		}
 		fmt.Fprintf(w, "%7d %-10s %10s %10s %10s %6s  %s\n", p.PID, p.User, mibp(p.PSS), mibp(p.Swap), mibp(p.RSS), cpu, oneLine(p.Command))
 	}
-	for _, m := range s.ProcessMissing {
-		fmt.Fprintf(w, "missing data source: %s\n", m)
-	}
 }
 
 func mibp(b *uint64) string {
@@ -154,4 +149,17 @@ func gpuVRAM(used, total *uint64) string {
 		return "n/a"
 	}
 	return gib(*used) + " of " + gib(*total)
+}
+
+// unavailableSection lists the data this machine cannot provide, with the
+// reason, (ADR 0006). Disabled Advice rules are listed by the Advice section.
+func unavailableSection(w io.Writer, s collector.Sample) {
+	a := s.Availability
+	if len(a.Unavailable) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nUnavailable on this machine\n")
+	for _, u := range a.Unavailable {
+		fmt.Fprintf(w, "  %s: %s\n", u.Feature, u.Reason)
+	}
 }

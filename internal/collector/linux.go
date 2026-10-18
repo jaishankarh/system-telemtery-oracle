@@ -7,8 +7,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jaishankarh/system-telemtery-oracle/internal/availability"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
+
+func contains(l []string, v string) bool {
+	for _, x := range l {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
 
 // Linux reads /proc and /sys through a Machine.
 type Linux struct {
@@ -94,6 +104,11 @@ func (l *Linux) Collect() (Sample, error) {
 	l.collectPressureAndDisks(now, &s)
 	l.collectProcesses(now, &s)
 	sort.Strings(s.Missing)
+	in := availability.Inputs{Missing: append(append([]string{}, s.Missing...), s.ProcessMissing...)}
+	if !contains(s.Missing, "/proc/swaps") && s.Swap.Disk == nil {
+		in.Absent = append(in.Absent, "disk_swap")
+	}
+	s.Availability = availability.Build(l.m, in)
 	l.prev = cur
 	return s, nil
 }

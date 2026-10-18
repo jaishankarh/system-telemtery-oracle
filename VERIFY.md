@@ -4,6 +4,16 @@ Run on your Ubuntu laptop, as root, from a checkout of `integration/phase-1`. On
 
 Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build`.
 
+## Ticket 10: Graceful degradation
+
+Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
+
+- [ ] `curl -s 127.0.0.1:9191/api/availability | python3 -m json.tool` shows `environment` (your cgroup mode "v2"/"hybrid"/"v1", `systemd` true, the Docker/containerd sockets found, GPU paths) and `unavailable` listing only what your laptop truly lacks, each with a one-line `reason`; on a modern Ubuntu with Docker and a GPU it is empty or short
+- [ ] Dashboard at http://127.0.0.1:9191: if anything is unavailable, an "Unavailable on this machine" box lists it with reasons; sections and table columns without data are hidden rather than showing 0 or n/a
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report | tail -20` prints the same under "Unavailable on this machine"
+- [ ] Take a source away and see it listed within a few seconds, no crash: `sudo systemctl stop docker docker.socket` lists "Container runtime"; start them again and it disappears. If you have no swap partition or file, "Disk Swap" is listed and the Advice panel lists Hardware Limit as disabled with "needs Disk Swap (...)"
+- [ ] Optional, kernel without PSI: boot with `psi=0`, or compare `cat /proc/pressure/memory` failing: "Pressure stall information (PSI)" is listed, the pressure charts are hidden, `curl -s 127.0.0.1:9191/api/system | python3 -m json.tool | grep -A2 '"pressure"'` shows null
+
 ## Ticket 12: Advisor and Hardware Limit
 
 - [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`. `curl -s 127.0.0.1:9191/api/advice | python3 -m json.tool` returns `window_seconds: 300`, `advice: []`, `pending`, and `disabled`. `disabled` is empty if your kernel has `/proc/pressure/memory`, `/proc/vmstat` and (when you have both zram and a swap file) `/sys/block/zram0/stat`; otherwise it lists the Hardware Limit rule with a one-line reason
@@ -13,6 +23,28 @@ Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build
 - [ ] `curl -s 127.0.0.1:9191/api/advice/events` shows `advice_started` and, after the stress ends, `advice_ended`
 - [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` (with the instance above running) prints an "Advice" section from the running instance; with it stopped, it says it cannot verify the Sustained window and lists current conditions and disabled rules
 - [ ] Swap attribution on a machine with both zram and a swap file: `cat /sys/block/zram0/stat` counters increase when swapping, and `disk_swap_in/out` in the evidence is what is left after subtracting them from `grep -E 'pswp(in|out)' /proc/vmstat`
+
+## Ticket 14: swap Settings Fixes
+
+- [ ] Build and run as root: `make build && sudo ./bin/sys-telemetry-app` (use the binary name from earlier sections), open the dashboard.
+- [ ] `curl -s localhost:<port>/api/advice | jq '.disabled'` lists swap rules only if a source is missing (for example `/proc/sys/vm/swappiness`); on a normal Ubuntu laptop none of the three swap rules are disabled.
+- [ ] Swappiness: `cat /proc/sys/vm/swappiness` is 60. With a large page cache (read a few big files, e.g. `cat` a multi-GB file to /dev/null until Cached is above 25% of RAM) and Disk Swap being written (`vmstat 1`, so column), after 5 minutes Advice `swappiness-too-aggressive` appears with `vm.swappiness = 10` and a reason. Copy it into `/etc/sysctl.d/99-swappiness.conf` yourself; the app must not create it.
+- [ ] Compressed Swap Thrashing: with zram in use and in/out both above 100 pages/s for 5 minutes, `compressed-swap-thrashing` appears, explained as CPU cost, no hardware-limit entry.
+- [ ] Swap wear: with Disk Swap written steadily (for example a stress job that overcommits RAM for 35+ minutes) `swap-wear` appears with a GB/day figure in the title and in Evidence (`disk_swap_write_gb_per_day`) that matches `vmstat` pswpout x 4 KiB x 86400.
+- [ ] Dashboard Advice panel shows the text in a box with a Copy button; pasting it gives only the file content.
+- [ ] After all of this: `ls /etc/sysctl.d/99-swappiness.conf /etc/sysctl.d/99-zram-swap.conf /etc/systemd/zram-generator.conf` shows files you did not create do not exist, and `cat /proc/sys/vm/swappiness` is unchanged.
+
+## Ticket 17: Hide and Snooze Advice
+
+Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run` (a config with `advisor_window = "30s"` and `snooze_presets = "1m, 1d, 7d"` makes this quicker).
+
+- [ ] Create Sustained Advice (for example fill RAM until the Advice panel shows an item) and open http://127.0.0.1:9191. The item shows Hide, a Snooze select (presets from config) and Snooze.
+- [ ] Click Hide: the item leaves the panel and appears under "Hidden (until Severity rises above ...)" with an Unhide button. `curl -s localhost:9191/api/advice | jq .hidden` lists it.
+- [ ] Click Unhide: it returns.
+- [ ] Snooze for 1m: it disappears, shows "Snoozed until ..."; after a minute, if the condition still holds, it is back.
+- [ ] `sudo cat /var/lib/sys-telemetry-app/state.json` shows the entry; restart the program: the entry is still hidden.
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` lists hidden/snoozed Advice with its id; `ls /var/lib/sys-telemetry-app` shows state.json (plus the History files from ticket 11), nothing else from this ticket.
+- [ ] Browser safety: `curl -i -X POST localhost:9191/api/advice/hide -H 'Content-Type: application/json' -H 'Origin: http://evil.example' -d '{"id":"x"}'` returns 403; `curl -i localhost:9191/api/advice/hide` returns 405.
 
 ## Ticket 18: Self-guard and systemd install
 
@@ -123,3 +155,28 @@ Run as root on the Ubuntu laptop. Start the binary: `sudo ./dist/sys-telemetry-a
 - [ ] Close the tab (or switch to another tab: streaming pauses while hidden): `clients` returns to 0 and `stream_encodes` stops rising; reopening resumes it and the graph backfills the gap
 - [ ] Works offline: disconnect the network, reload; charts still draw (uPlot is embedded)
 - [ ] Narrow the window to half a laptop screen: charts reflow to one column without horizontal page scroll
+
+## Ticket 9: GPU metrics
+
+AMD/Intel are read from sysfs; NVIDIA is read through NVML (libnvidia-ml.so.1) loaded at runtime by a vendored dlopen. NVML could not be exercised in development (only against a stub library), so the NVIDIA checks below matter most.
+
+Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
+
+NVIDIA (RTX 3060 laptop, proprietary driver installed):
+- [ ] The driver is loaded: `ls /dev/nvidiactl /proc/driver/nvidia` both exist, and `ls /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1` (or `ldconfig -p | grep nvidia-ml`) exists
+- [ ] `readelf -d ./dist/sys-telemetry-app-linux-amd64 | grep NEEDED` lists libdl/libpthread/libc (expected: the binary is dynamic, see ADR 0002 addendum)
+- [ ] `curl -s 127.0.0.1:9191/api/system | python3 -m json.tool | grep -B2 -A12 '"gpus"'` shows an entry with vendor "nvidia", name containing "RTX 3060", util_percent, temperature_celsius, vram_used_bytes and vram_total_bytes (about 6 GiB on a laptop 3060, 12 GiB desktop)
+- [ ] Compare with `nvidia-smi --query-gpu=name,utilization.gpu,temperature.gpu,memory.used,memory.total --format=csv` (run it only to compare): temperature within 1-2 C, VRAM used within a few MiB (nvidia-smi MiB x 1048576 = bytes), utilisation similar
+- [ ] Generate load (a game, `glxgears -fullscreen`, or `python3 -c 'import torch;...'`): util_percent and temperature rise within a few seconds; VRAM used rises when a GPU program starts
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` has a line `GPU  NVIDIA GeForce RTX 3060 (nvidia)  util N%  temp N C  VRAM x GiB of y GiB`
+- [ ] Dashboard at http://127.0.0.1:9191: a "GPU" section under Swap, and in Graphs a "GPU" chart (utilisation and temperature) and a "GPU memory (VRAM)" chart that move every ~2s
+- [ ] `curl -s 127.0.0.1:9191/api/live | python3 -c 'import json,sys; p=json.load(sys.stdin)["points"][-1]; print({k:v for k,v in p.items() if k.startswith("gpu")})'` prints the four gpu_* values
+- [ ] Hybrid laptop: if the GPU is runtime-suspended (`cat /sys/bus/pci/devices/*/power/runtime_status`), reading may wake it; note whether this is a problem (battery). If it is, tell me
+- [ ] Stability: leave it running 10 minutes under `watch -n1 nvidia-smi` in another terminal; the program keeps sampling (`/api/system` time advances) and `ps -o rss= -p $(pgrep sys-telemetry)` stays under 30000 (KiB)
+- [ ] Failure is quiet: `sudo rmmod nvidia_uvm` is not needed; instead `sudo mv /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /tmp/` and restart: no crash, no `gpus` key, no errors on stderr (move it back afterwards)
+
+AMD / Intel (only if you have such a machine or an iGPU):
+- [ ] `ls /sys/class/drm/card*/device/vendor` and `cat` them: 0x1002 is AMD, 0x8086 is Intel. `gpus` in /api/system lists those (Intel iGPUs usually have only a temperature or nothing; AMD shows util from gpu_busy_percent and VRAM from mem_info_vram_*)
+
+No GPU / no driver:
+- [ ] On a machine without a GPU (a VM or server): the binary starts, `/api/system` has no `gpus` key, the dashboard has no GPU section or charts, `report` has no GPU line, stderr has no GPU errors

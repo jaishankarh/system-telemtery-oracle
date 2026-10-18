@@ -3,6 +3,8 @@ package advisor
 import (
 	"fmt"
 	"math"
+
+	"github.com/jaishankarh/system-telemtery-oracle/internal/availability"
 )
 
 // StandardRAMGB are the RAM sizes suggested by a Hardware Limit verdict.
@@ -18,6 +20,11 @@ func (HardwareLimitRule) ID() string    { return "hardware-limit" }
 func (HardwareLimitRule) Title() string { return "Hardware Limit (more physical RAM needed)" }
 
 func (HardwareLimitRule) Needs(in *Input) string {
+	// Sources this rule cannot do without, stated with the shared reasons (ADR 0006).
+	if why := availability.DisabledReason(in.Sample.Availability.Unavailable,
+		"meminfo", "pressure", "swap_rates", "smaps_rollup", "disk_swap"); why != "" {
+		return why
+	}
 	switch {
 	case in.Sample.Memory == nil:
 		return "physical RAM size is unknown: /proc/meminfo is missing"

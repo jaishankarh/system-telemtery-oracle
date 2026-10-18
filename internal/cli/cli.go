@@ -104,7 +104,9 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 	}
 	col := collector.NewLinux(env.Machine)
 	srv := server.New(cfg.Interval, newGrouper(env))
-	srv.SetAdvisor(advisor.New(env.Machine, cfg.Advisor, advisor.DefaultRules()))
+	adv := advisor.New(env.Machine, cfg.Advisor, advisor.DefaultRules())
+	adv.AllowStateWrites() // only the running instance writes Hidden/Snoozed state
+	srv.SetAdvisor(adv)
 	first, _ := col.Collect()
 	srv.Update(first)
 
