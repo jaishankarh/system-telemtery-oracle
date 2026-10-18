@@ -14,6 +14,18 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] Take a source away and see it listed within a few seconds, no crash: `sudo systemctl stop docker docker.socket` lists "Container runtime"; start them again and it disappears. If you have no swap partition or file, "Disk Swap" is listed and the Advice panel lists Hardware Limit as disabled with "needs Disk Swap (...)"
 - [ ] Optional, kernel without PSI: boot with `psi=0`, or compare `cat /proc/pressure/memory` failing: "Pressure stall information (PSI)" is listed, the pressure charts are hidden, `curl -s 127.0.0.1:9191/api/system | python3 -m json.tool | grep -A2 '"pressure"'` shows null
 
+## Ticket 11: History and replay
+
+- [ ] Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run`
+- [ ] `sudo ls -l /var/lib/sys-telemetry-app/history.ring` shows mode `-rw-------`, owner root, size 9,011,200 bytes (about 8.6 MB); it stays that size after minutes of running.
+- [ ] After ~1 minute: `sudo ./dist/sys-telemetry-app-linux-amd64 replay` (asks the running instance) lists a line every 10 s with real cpu, ram, swap and working-set figures and your real top Applications; the last sample lists Processes with full command lines.
+- [ ] `curl -s 127.0.0.1:9191/api/history?minutes=5 | head -c 600` returns JSON with `"live": true` and real samples.
+- [ ] Crash test: `sudo pkill -9 sys-telemetry-app`, restart it: stderr prints `notice: last session ended without clean shutdown at <time within ~30s of the kill>`.
+- [ ] With the instance stopped (or killed): `sudo ./dist/sys-telemetry-app-linux-amd64 replay --last-boot --minutes 5` shows the lead-up to the kill, ending within ~30 s of it.
+- [ ] `replay --around 14:30 --minutes 10` shows a window centred on that time (use a time within the running period).
+- [ ] Stop with Ctrl-C and restart: no unclean notice.
+- [ ] Optional: `stress-ng --vm 4 --vm-bytes 90%` (or fill RAM) and see a flush plus a `mem-psi` / `THRASHING` sample in `replay` at the spike.
+
 ## Ticket 12: Advisor and Hardware Limit
 
 - [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`. `curl -s 127.0.0.1:9191/api/advice | python3 -m json.tool` returns `window_seconds: 300`, `advice: []`, `pending`, and `disabled`. `disabled` is empty if your kernel has `/proc/pressure/memory`, `/proc/vmstat` and (when you have both zram and a swap file) `/sys/block/zram0/stat`; otherwise it lists the Hardware Limit rule with a one-line reason
