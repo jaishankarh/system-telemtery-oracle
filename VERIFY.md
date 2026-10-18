@@ -78,6 +78,17 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] With Docker stopped (`sudo systemctl stop docker docker.socket`) the program keeps running and the container rows disappear without errors.
 - [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` lists the containers in the Applications table.
 
+## Ticket 6: App Profiles
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 report`: each program you have running appears as ONE row in "Applications by PSS + swap" with KIND `profile`: Cursor / Visual Studio Code / Windsurf, Android Studio / IntelliJ IDEA / other JetBrains IDEs, Google Chrome / Chromium / Brave / Microsoft Edge / Firefox, Android emulator, Gradle daemon. None of them is split into per-process rows or left in Other
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`, then list a browser's roles: `curl -s 127.0.0.1:9191/api/applications | python3 -c 'import json,sys,collections; [print(a["name"], dict(collections.Counter(p.get("role","") for p in a["processes"]))) for a in json.load(sys.stdin)["applications"] if a["kind"]=="profile"]'`. Browsers show `main`, `renderer` (many), `gpu`, `utility`, `zygote`; editors show `main`, `extension-host`, `language-server`, `file-watcher`, `ripgrep`, `pty-host`, `terminal-shell`, `renderer`
+- [ ] Language servers count toward their editor: open a Rust, Go, Python or TypeScript project in Cursor/VS Code, then `curl -s 127.0.0.1:9191/api/applications | grep -o '"role":"language-server"' | wc -l` is >= 1, and `pgrep -a 'rust-analyzer|gopls|tsserver|pyright'` PIDs all appear in the editor's Application (`pids`), not in a separate row
+- [ ] Editor terminal exclusion: run `npm run dev` (or any server) in the editor's built-in terminal; its PIDs are NOT in the editor's Application (the shell is, with role `terminal-shell`)
+- [ ] Browser sprawl: with many tabs open, one row per browser; its `process_count` matches `pgrep -c -f '<browser binary>'` within a few; PSS is far below the sum of RSS (shared pages not double counted)
+- [ ] Android: start an emulator from Android Studio: it is its own "Android emulator" row (roles `main`, `emulator-vm`), not part of Android Studio. A Gradle daemon started by Android Studio or IntelliJ (`pgrep -af GradleDaemon`) is inside that IDE's row; one started from a terminal (or whose IDE has quit) is the "Gradle daemon" row
+- [ ] Dashboard at http://127.0.0.1:9191: expand an editor or browser row; the role (for example `language-server`, `renderer`) shows in place of the old subgroup column for each process
+- [ ] Anything that is not in the list (a snap, a flatpak, a service) still gets its old systemd/snap/flatpak/ancestor row. Note any browser or editor build installed in a path with spaces or an unusual name that is NOT folded in; send the command line (`ps -o args= -p <pid>`) so a recogniser can be added to internal/grouping/profiles_table.go
+
 ## Ticket 7: Dev & Build per Project and user grouping rules
 
 Run as root on the Ubuntu laptop. Start the binary: `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`.
