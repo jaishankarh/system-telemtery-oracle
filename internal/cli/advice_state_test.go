@@ -197,14 +197,14 @@ func TestHiddenAndSnoozedStatePersistsAcrossRestarts(t *testing.T) {
 func TestOnlyStateJSONIsWrittenToTheStateDir(t *testing.T) {
 	m, p, id := activeThrashing(t, "")
 	mustPost(t, p, "/api/advice/hide", `{"id":"`+id+`"}`)
-	// History (the ring file and the instance address) lives in the same directory;
+	// History (the ring file, its lock and the instance address) lives in the same directory;
 	// hiding must add only state.json and leave no temporary file behind.
 	es, _ := os.ReadDir(filepath.Join(m.Root, "state"))
 	seen := map[string]bool{}
 	for _, e := range es {
 		seen[e.Name()] = true
 		switch e.Name() {
-		case "state.json", "history.ring", "instance.addr":
+		case "state.json", "history.ring", "history.lock", "instance.addr":
 		default:
 			t.Fatalf("unexpected file in the state dir: %v", es)
 		}

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
@@ -65,6 +66,10 @@ type Recorder struct {
 	prevEndedAt time.Time
 	closed      bool
 	movedAside  string
+	warn        func(string)
+	needSync    atomic.Bool
+	syncMu      sync.Mutex
+	syncFailing bool
 	lock        *os.File // flock on the state dir while this instance owns History
 }
 
@@ -192,6 +197,11 @@ func (r *Recorder) Observe(s collector.Sample) {
 	if r == nil {
 		return
 	}
+	r.observe(s)
+	r.syncIfNeeded()
+}
+
+func (r *Recorder) observe(s collector.Sample) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
@@ -212,7 +222,13 @@ func (r *Recorder) Observe(s collector.Sample) {
 
 func (r *Recorder) record(rec Record) {
 	r.seq++
-	b, _ := encodeSlot(SlotSize, r.seq, encodeRecord(rec))
+	b, ok := encodeSlot(SlotSize, r.seq, encodeRecord(rec))
+	if !ok { // cannot happen once the Record is shrunk to fit; skip rather than write nothing valid
+		if r.warn != nil {
+			r.warn("a History sample did not fit its slot and was dropped")
+		}
+		return
+	}
 	r.dirty[slotOffset(r.seq)] = b
 }
 
@@ -221,6 +237,11 @@ func (r *Recorder) AppendEvent(e Event) {
 	if r == nil {
 		return
 	}
+	r.appendEvent(e)
+	r.syncIfNeeded()
+}
+
+func (r *Recorder) appendEvent(e Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
@@ -254,7 +275,7 @@ func (r *Recorder) flush(now time.Time) {
 		}
 		delete(r.dirty, off)
 	}
-	r.f.Sync()
+	r.needSync.Store(true)
 	r.lastFlush = now
 }
 
@@ -264,8 +285,38 @@ func (r *Recorder) Flush() {
 		return
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.flush(r.m.Clock.Now())
+	r.mu.Unlock()
+	r.syncIfNeeded()
+}
+
+// SetWarn sets where write problems are reported (each failure streak once).
+func (r *Recorder) SetWarn(f func(string)) {
+	if r != nil {
+		r.mu.Lock()
+		r.warn = f
+		r.mu.Unlock()
+	}
+}
+
+// syncIfNeeded makes written slots durable. It runs without r.mu, so a slow
+// disk never stalls sampling or the History queries; syncMu keeps one fsync at a time.
+func (r *Recorder) syncIfNeeded() {
+	if !r.needSync.Swap(false) {
+		return
+	}
+	r.syncMu.Lock()
+	err := r.f.Sync()
+	r.syncMu.Unlock()
+	if errors.Is(err, os.ErrClosed) {
+		return // the session ended meanwhile; Close already synced
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err != nil && !r.syncFailing && r.warn != nil {
+		r.warn("History could not be synced to disk: " + err.Error())
+	}
+	r.syncFailing = err != nil
 }
 
 // Close flushes and marks the session as cleanly ended.
