@@ -1,7 +1,6 @@
 package history
 
 import (
-	"encoding/json"
 	"sort"
 	"time"
 
@@ -64,84 +63,72 @@ type SeriesResult struct {
 	Events []Event      `json:"events"`
 }
 
-func (s *snapshot) records() []Record {
-	var all []Record
-	for _, sl := range s.samples {
-		if rec, ok := decodeRecord(sl.payload); ok {
-			all = append(all, rec)
-		}
-	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].Time.Before(all[j].Time) })
-	return all
-}
-
-func (s *snapshot) allEvents() []Event {
-	evs := []Event{}
-	for _, e := range s.events {
-		var ev Event
-		if j, err := decompress(e.payload); err == nil && json.Unmarshal(j, &ev) == nil {
-			evs = append(evs, ev)
-		}
-	}
-	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Time.Before(evs[j].Time) })
-	return evs
-}
-
-func (r *Recorder) snap() (*snapshot, error) {
+// snap flushes, then opens an index over the ring. Only one query runs at a
+// time (a dragged slider fires several), which bounds the memory they use; the
+// returned release closes the snapshot and lets the next query in.
+func (r *Recorder) snap() (*snapshot, func(), error) {
+	r.gate <- struct{}{}
 	r.Flush()
-	return readSnapshot(Path(r.m.StateDir))
+	snap, err := readSnapshot(Path(r.m.StateDir))
+	if err != nil {
+		<-r.gate
+		return nil, nil, err
+	}
+	return snap, func() { snap.Close(); <-r.gate }, nil
 }
 
 // Span answers how far back the slider can go.
 func (r *Recorder) Span() (SpanResult, error) {
-	snap, err := r.snap()
+	snap, release, err := r.snap()
 	if err != nil {
 		return SpanResult{}, err
 	}
+	defer release()
 	res := SpanResult{IntervalSeconds: SampleEvery.Seconds(), Events: snap.allEvents()}
-	if all := snap.records(); len(all) > 0 {
-		res.Oldest, res.Newest = all[0].Time, all[len(all)-1].Time
+	if first, ok := snap.firstRecord(); ok {
+		res.Oldest = first.Time
+		if last, _, ok := snap.lastRecord(len(snap.samples)); ok {
+			res.Newest = last.Time
+		}
 	}
 	return res, nil
 }
 
 // At answers History at one moment.
 func (r *Recorder) At(t time.Time) (AtResult, error) {
-	snap, err := r.snap()
+	snap, release, err := r.snap()
 	if err != nil {
 		return AtResult{}, err
 	}
-	return at(snap.records(), snap.allEvents(), t), nil
+	defer release()
+	return at(snap, snap.allEvents(), t), nil
 }
 
-func at(all []Record, evs []Event, t time.Time) AtResult {
+func at(snap *snapshot, evs []Event, t time.Time) AtResult {
 	res := AtResult{Requested: t, Advice: activeAt(evs, t)}
-	best := -1
-	for i, rec := range all {
-		if rec.Time.After(t) {
-			res.Next = rec.Time
+	next := snap.firstAfter(t) // first sample after t
+	var prev, nxt *Record
+	if p, _, ok := snap.lastRecord(next); ok {
+		prev = &p
+		res.Previous = p.Time
+	}
+	for i := next; i < len(snap.samples); i++ {
+		if n, ok := snap.record(i); ok {
+			nxt = &n
+			res.Next = n.Time
 			break
 		}
-		best = i
-	}
-	if best >= 0 {
-		res.Previous = all[best].Time
 	}
 	near := func(x time.Time) bool { d := t.Sub(x); return d < 2*SampleEvery && d > -2*SampleEvery }
-	pick := -1
-	if best >= 0 && near(all[best].Time) {
-		pick = best
+	var pick *Record
+	if prev != nil && near(prev.Time) {
+		pick = prev
 	}
-	if !res.Next.IsZero() && near(res.Next) && (pick < 0 || res.Next.Sub(t) < t.Sub(all[pick].Time)) {
-		for i := best + 1; i < len(all); i++ {
-			if all[i].Time.Equal(res.Next) {
-				pick = i
-				break
-			}
-		}
+	if nxt != nil && near(nxt.Time) && (pick == nil || nxt.Time.Sub(t) < t.Sub(pick.Time)) {
+		pick = nxt
 	}
-	if pick >= 0 {
-		rec := all[pick]
+	if pick != nil {
+		rec := *pick
 		res.Found, res.Sample = true, &rec
 		res.ShownApplications = len(rec.Apps)
 		res.TotalApplications = len(rec.Apps) + rec.OmittedApps
@@ -193,32 +180,34 @@ func sevRank(s string) int {
 // Series answers Graphs data for the window of the given minutes centred on
 // around (the newest window when around is zero).
 func (r *Recorder) Series(around time.Time, minutes int) (SeriesResult, error) {
-	snap, err := r.snap()
+	snap, release, err := r.snap()
 	if err != nil {
 		return SeriesResult{}, err
 	}
+	defer release()
 	if minutes <= 0 {
 		minutes = DefaultSeriesMinutes
 	}
 	if minutes > MaxSeriesMinutes {
 		minutes = MaxSeriesMinutes
 	}
-	all, evs := snap.records(), snap.allEvents()
 	win := time.Duration(minutes) * time.Minute
 	res := SeriesResult{Points: []live.Point{}, Events: []Event{}}
 	switch {
 	case !around.IsZero():
 		res.From, res.To = around.Add(-win/2), around.Add(win/2)
-	case len(all) > 0:
-		res.To = all[len(all)-1].Time
-		res.From = res.To.Add(-win)
+	default:
+		if last, _, ok := snap.lastRecord(len(snap.samples)); ok {
+			res.To = last.Time
+			res.From = res.To.Add(-win)
+		}
 	}
-	for _, rec := range all {
+	snap.eachRecord(snap.firstNotBefore(res.From), snap.firstAfter(res.To), func(rec Record) {
 		if !rec.Time.Before(res.From) && !rec.Time.After(res.To) {
 			res.Points = append(res.Points, pointOf(rec))
 		}
-	}
-	for _, e := range evs {
+	})
+	for _, e := range snap.allEvents() {
 		if !e.Time.Before(res.From) && !e.Time.After(res.To) {
 			res.Events = append(res.Events, e)
 		}

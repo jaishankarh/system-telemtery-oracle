@@ -12,12 +12,14 @@ package history
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -156,19 +158,52 @@ func create(path string, h header) (*os.File, error) {
 	return f, f.Sync()
 }
 
-// snapshot is everything valid in a ring file.
+// snapshot is an index over the valid slots of a ring file. It holds only the
+// sequence numbers (oldest first); a slot's payload is read and decoded when
+// asked for, so a query costs what its window costs, not the whole 24 hours.
+// Close it when done.
 type snapshot struct {
 	hdr     header
-	samples []rawSlot
-	events  []rawSlot
-}
-
-type rawSlot struct {
-	seq     uint64
-	payload []byte
+	f       *os.File
+	samples []uint64 // sequence numbers of valid sample slots, ascending
+	events  []uint64 // same for Advice event slots
 }
 
 var errNoHistory = errors.New("no History file")
+
+func (s *snapshot) Close() {
+	if s != nil && s.f != nil {
+		s.f.Close()
+	}
+}
+
+var indexBufs = sync.Pool{New: func() any { b := make([]byte, 1<<20); return &b }}
+
+// indexRing reads the ring in 1 MB chunks and keeps only the sequence numbers
+// of slots whose checksum holds.
+func indexRing(f *os.File, base int64, count, size int) ([]uint64, error) {
+	per := (1 << 20) / size
+	bp := indexBufs.Get().(*[]byte)
+	defer indexBufs.Put(bp)
+	buf := (*bp)[:per*size]
+	var seqs []uint64
+	for i := 0; i < count; i += per {
+		n := per
+		if i+n > count {
+			n = count - i
+		}
+		if _, err := f.ReadAt(buf[:n*size], base+int64(i)*int64(size)); err != nil {
+			return seqs, nil // a short file: keep what was read
+		}
+		for j := 0; j < n; j++ {
+			if seq, _, ok := decodeSlot(buf[j*size : (j+1)*size]); ok {
+				seqs = append(seqs, seq)
+			}
+		}
+	}
+	sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
+	return seqs, nil
+}
 
 func readSnapshot(path string) (*snapshot, error) {
 	f, err := os.Open(path)
@@ -178,35 +213,109 @@ func readSnapshot(path string) (*snapshot, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
 	hb := make([]byte, HeaderSize)
 	if _, err := io.ReadFull(f, hb); err != nil {
+		f.Close()
 		return nil, errNoHistory
 	}
 	h, ok := decodeHeader(hb)
 	if !ok {
+		f.Close()
 		return nil, errNoHistory
 	}
-	s := &snapshot{hdr: h}
-	buf := make([]byte, SlotSize)
-	for i := 0; i < SlotCount; i++ {
-		if _, err := f.ReadAt(buf, slotOffset(uint64(i))); err != nil {
-			break
-		}
-		if seq, p, ok := decodeSlot(buf); ok {
-			s.samples = append(s.samples, rawSlot{seq, append([]byte(nil), p...)})
-		}
-	}
-	ebuf := make([]byte, EventSize)
-	for i := 0; i < EventCount; i++ {
-		if _, err := f.ReadAt(ebuf, eventOffset(uint64(i))); err != nil {
-			break
-		}
-		if seq, p, ok := decodeSlot(ebuf); ok {
-			s.events = append(s.events, rawSlot{seq, append([]byte(nil), p...)})
-		}
-	}
-	sort.Slice(s.samples, func(i, j int) bool { return s.samples[i].seq < s.samples[j].seq })
-	sort.Slice(s.events, func(i, j int) bool { return s.events[i].seq < s.events[j].seq })
+	s := &snapshot{hdr: h, f: f}
+	s.samples, _ = indexRing(f, HeaderSize, SlotCount, SlotSize)
+	s.events, _ = indexRing(f, HeaderSize+SlotCount*SlotSize, EventCount, EventSize)
 	return s, nil
+}
+
+// payload reads the slot holding seq (nil when it was overwritten or is torn).
+func (s *snapshot) payload(off int64, size int, seq uint64) []byte {
+	b := make([]byte, size)
+	if _, err := s.f.ReadAt(b, off); err != nil {
+		return nil
+	}
+	if got, p, ok := decodeSlot(b); ok && got == seq {
+		return p
+	}
+	return nil
+}
+
+// record decodes sample number i of the index.
+func (s *snapshot) record(i int) (Record, bool) {
+	p := s.payload(slotOffset(s.samples[i]), SlotSize, s.samples[i])
+	if p == nil {
+		return Record{}, false
+	}
+	return decodeRecord(p)
+}
+
+// timeAt is the time of sample i, false when it cannot be decoded.
+func (s *snapshot) timeAt(i int) (time.Time, bool) {
+	r, ok := s.record(i)
+	return r.Time, ok
+}
+
+// firstAfter is the index of the first sample strictly after t (len when none),
+// found by binary search: sequence order is time order, so only about 14 slots
+// are decoded.
+func (s *snapshot) firstAfter(t time.Time) int {
+	return sort.Search(len(s.samples), func(i int) bool {
+		ti, ok := s.timeAt(i)
+		return ok && ti.After(t)
+	})
+}
+
+// firstNotBefore is the index of the first sample at or after t.
+func (s *snapshot) firstNotBefore(t time.Time) int {
+	return sort.Search(len(s.samples), func(i int) bool {
+		ti, ok := s.timeAt(i)
+		return ok && !ti.Before(t)
+	})
+}
+
+// eachRecord streams samples lo..hi-1 in order, decoding one at a time.
+func (s *snapshot) eachRecord(lo, hi int, fn func(Record)) {
+	for i := lo; i < hi && i < len(s.samples); i++ {
+		if r, ok := s.record(i); ok {
+			fn(r)
+		}
+	}
+}
+
+// lastRecord is the newest decodable sample at or before index hi-1.
+func (s *snapshot) lastRecord(hi int) (Record, int, bool) {
+	for i := hi - 1; i >= 0; i-- {
+		if r, ok := s.record(i); ok {
+			return r, i, true
+		}
+	}
+	return Record{}, -1, false
+}
+
+// firstRecord is the oldest decodable sample.
+func (s *snapshot) firstRecord() (Record, bool) {
+	for i := range s.samples {
+		if r, ok := s.record(i); ok {
+			return r, true
+		}
+	}
+	return Record{}, false
+}
+
+// allEvents decodes the Advice events (at most EventCount, small), oldest first.
+func (s *snapshot) allEvents() []Event {
+	evs := []Event{}
+	for _, seq := range s.events {
+		p := s.payload(eventOffset(seq), EventSize, seq)
+		if p == nil {
+			continue
+		}
+		var ev Event
+		if j, err := decompress(p); err == nil && json.Unmarshal(j, &ev) == nil {
+			evs = append(evs, ev)
+		}
+	}
+	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Time.Before(evs[j].Time) })
+	return evs
 }

@@ -30,10 +30,9 @@ func AppKey(kind, name string) string { return kind + "\x00" + name }
 
 func peaksOf(snap *snapshot, since time.Time) Peaks {
 	p := Peaks{Apps: map[string]AppPeak{}}
-	for _, s := range snap.samples {
-		rec, ok := decodeRecord(s.payload)
-		if !ok || rec.Time.Before(since) {
-			continue
+	snap.eachRecord(snap.firstNotBefore(since), len(snap.samples), func(rec Record) {
+		if rec.Time.Before(since) {
+			return
 		}
 		if p.Samples == 0 || rec.Time.Before(p.From) {
 			p.From = rec.Time
@@ -64,7 +63,7 @@ func peaksOf(snap *snapshot, since time.Time) Peaks {
 			}
 			p.Apps[k] = e
 		}
-	}
+	})
 	return p
 }
 
@@ -77,11 +76,14 @@ func ReadPeaks(stateDir string, since time.Time) (Peaks, error) {
 		}
 		return Peaks{}, err
 	}
+	defer snap.Close()
 	return peaksOf(snap, since), nil
 }
 
 // Peaks answers from the running instance, flushing first.
 func (r *Recorder) Peaks(since time.Time) (Peaks, error) {
+	r.gate <- struct{}{}
+	defer func() { <-r.gate }()
 	r.Flush()
 	return ReadPeaks(r.m.StateDir, since)
 }

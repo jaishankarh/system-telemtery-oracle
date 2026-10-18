@@ -48,6 +48,7 @@ type EventAppender interface {
 // Machine whose state dir cannot be written still runs (ADR 0006).
 type Recorder struct {
 	mu      sync.Mutex
+	gate    chan struct{} // one History query at a time
 	m       machine.Machine
 	f       *os.File
 	grouper *grouping.Grouper
@@ -69,10 +70,11 @@ type Recorder struct {
 // unclean previous shutdown and starts a new session.
 func Open(m machine.Machine, g *grouping.Grouper) (*Recorder, error) {
 	path := Path(m.StateDir)
-	r := &Recorder{m: m, grouper: g, dirty: map[int64][]byte{}}
+	r := &Recorder{m: m, grouper: g, dirty: map[int64][]byte{}, gate: make(chan struct{}, 1)}
 	now := m.Clock.Now()
 	h := header{Session: 1, State: stateRunning, StartedNs: now.UnixNano()}
 	if snap, err := readSnapshot(path); err == nil {
+		defer snap.Close()
 		h.Session = snap.hdr.Session + 1
 		if snap.hdr.State == stateRunning {
 			h.PrevState = stateRunning
@@ -81,10 +83,10 @@ func Open(m machine.Machine, g *grouping.Grouper) (*Recorder, error) {
 			h.PrevEndedNs = r.prevEndedAt.UnixNano()
 		}
 		if n := len(snap.samples); n > 0 {
-			r.seq = snap.samples[n-1].seq
+			r.seq = snap.samples[n-1]
 		}
 		if n := len(snap.events); n > 0 {
-			r.eseq = snap.events[n-1].seq
+			r.eseq = snap.events[n-1]
 		}
 		f, err := os.OpenFile(path, os.O_RDWR, 0o600)
 		if err != nil {
@@ -114,7 +116,7 @@ func Open(m machine.Machine, g *grouping.Grouper) (*Recorder, error) {
 
 func newestTime(s *snapshot, session uint64) time.Time {
 	for i := len(s.samples) - 1; i >= 0; i-- {
-		if rec, ok := decodeRecord(s.samples[i].payload); ok && rec.Session == session {
+		if rec, ok := s.record(i); ok && rec.Session == session {
 			return rec.Time
 		}
 	}

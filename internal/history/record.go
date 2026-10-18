@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
@@ -149,8 +150,17 @@ func compress(b []byte) []byte {
 	return buf.Bytes()
 }
 
+// inflaters reuses flate readers: each one carries ~40 KB of state, and a
+// window of History decodes hundreds of slots.
+var inflaters = sync.Pool{New: func() any { return flate.NewReader(bytes.NewReader(nil)) }}
+
 func decompress(b []byte) ([]byte, error) {
-	return io.ReadAll(flate.NewReader(bytes.NewReader(b)))
+	fr := inflaters.Get().(io.ReadCloser)
+	defer inflaters.Put(fr)
+	if err := fr.(flate.Resetter).Reset(bytes.NewReader(b), nil); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(fr)
 }
 
 // encodeRecord compresses r into a slot payload, shrinking it until it fits.

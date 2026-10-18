@@ -1,10 +1,8 @@
 package history
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
-	"sort"
 	"time"
 )
 
@@ -46,17 +44,18 @@ func ReadFile(stateDir string, q Query) (Result, error) {
 		}
 		return Result{}, err
 	}
+	defer snap.Close()
 	return answer(snap, q, 0), nil
 }
 
 // Query answers from the running instance: it flushes first so the answer
 // includes samples not yet on disk.
 func (r *Recorder) Query(q Query) (Result, error) {
-	r.Flush()
-	snap, err := readSnapshot(Path(r.m.StateDir))
+	snap, release, err := r.snap()
 	if err != nil {
 		return Result{}, err
 	}
+	defer release()
 	res := answer(snap, q, r.hdr.Session)
 	res.Live = true
 	return res, nil
@@ -66,22 +65,16 @@ func (r *Recorder) Query(q Query) (Result, error) {
 const eventTailAfterLastSample = 30 * time.Second
 
 // answer: running is the live session number, or 0 when no instance runs.
+// Only the samples in the window are decoded.
 func answer(snap *snapshot, q Query, running uint64) Result {
 	mins := q.Minutes
 	if mins <= 0 {
 		mins = DefaultMinutes
 	}
 	win := time.Duration(mins) * time.Minute
-	var all []Record
-	for _, s := range snap.samples {
-		if rec, ok := decodeRecord(s.payload); ok {
-			all = append(all, rec)
-		}
-	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].Time.Before(all[j].Time) })
+	n := len(snap.samples)
 
 	res := Result{Samples: []Record{}, Events: []Event{}}
-	var eventsTo time.Time // end of the window for Advice events (see below)
 	if running > 0 {
 		res.Unclean = snap.hdr.PrevState == stateRunning
 		res.EndedAt = time.Unix(0, snap.hdr.PrevEndedNs).UTC()
@@ -93,77 +86,71 @@ func answer(snap *snapshot, q Query, running uint64) Result {
 		res.EndedAt = time.Time{}
 	}
 
+	toIdx := n // samples before this index are at or before res.To
 	switch {
 	case q.LastBoot:
-		var target uint64
-		for _, r := range all {
-			if (running == 0 || r.Session < running) && r.Session > target {
-				target = r.Session
+		// The newest sample of the newest session that is not the running one.
+		var last Record
+		found := false
+		for i := n - 1; i >= 0; i-- {
+			if r, ok := snap.record(i); ok && (running == 0 || r.Session < running) {
+				last, found, toIdx = r, true, i+1
+				break
 			}
 		}
-		res.Session = target
-		var sess []Record
-		for _, r := range all {
-			if r.Session == target {
-				sess = append(sess, r)
-			}
-		}
-		if len(sess) == 0 {
+		if !found {
 			return res
 		}
-		res.To = sess[len(sess)-1].Time
+		res.Session = last.Session
+		res.To = last.Time
 		res.From = res.To.Add(-win)
 	case !q.Around.IsZero():
 		res.From, res.To = q.Around.Add(-win/2), q.Around.Add(win/2)
+		toIdx = snap.firstAfter(res.To)
 	default:
-		if len(all) == 0 {
+		last, i, ok := snap.lastRecord(n)
+		if !ok {
 			return res
 		}
-		res.To = all[len(all)-1].Time
+		res.To, toIdx = last.Time, i+1
 		res.From = res.To.Add(-win)
 	}
+	evs := snap.allEvents()
+	eventsTo := res.To // end of the window for Advice events
 	if q.Around.IsZero() {
 		// Samples are taken every 10s but Advice is evaluated every sample interval, so
 		// Advice that started or ended after the last sample, in the final seconds before a
 		// crash, must still be part of the lead-up. Stop at the next session's first sample.
 		limit := res.To.Add(eventTailAfterLastSample)
-		for _, r := range all {
-			if r.Time.After(res.To) && (q.LastBoot && r.Session != res.Session || !q.LastBoot) && r.Time.Before(limit) {
+		for i := toIdx; i < n; i++ {
+			r, ok := snap.record(i)
+			if !ok {
+				continue
+			}
+			if !r.Time.Before(limit) {
+				break
+			}
+			if r.Time.After(res.To) && (q.LastBoot && r.Session != res.Session || !q.LastBoot) {
 				limit = r.Time
+				break
 			}
 		}
-		newest := res.To
-		for _, e := range snap.events {
-			var ev Event
-			if j, err := decompress(e.payload); err == nil && json.Unmarshal(j, &ev) == nil {
-				if ev.Time.After(newest) && ev.Time.Before(limit) {
-					newest = ev.Time
-				}
+		for _, ev := range evs {
+			if ev.Time.After(eventsTo) && ev.Time.Before(limit) {
+				eventsTo = ev.Time
 			}
 		}
-		eventsTo = newest
 	}
-	for _, r := range all {
-		if r.Time.Before(res.From) || r.Time.After(res.To) {
-			continue
-		}
-		if q.LastBoot && r.Session != res.Session {
-			continue
+	snap.eachRecord(snap.firstNotBefore(res.From), toIdx, func(r Record) {
+		if r.Time.Before(res.From) || r.Time.After(res.To) || q.LastBoot && r.Session != res.Session {
+			return
 		}
 		res.Samples = append(res.Samples, r)
-	}
-	for _, e := range snap.events {
-		var ev Event
-		if j, err := decompress(e.payload); err == nil && json.Unmarshal(j, &ev) == nil {
-			end := res.To
-			if eventsTo.After(end) {
-				end = eventsTo
-			}
-			if !ev.Time.Before(res.From) && !ev.Time.After(end) {
-				res.Events = append(res.Events, ev)
-			}
+	})
+	for _, ev := range evs {
+		if !ev.Time.Before(res.From) && !ev.Time.After(eventsTo) {
+			res.Events = append(res.Events, ev)
 		}
 	}
-	sort.SliceStable(res.Events, func(i, j int) bool { return res.Events[i].Time.Before(res.Events[j].Time) })
 	return res
 }
