@@ -4,11 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sys-telemetry-app</title>
+<link rel="stylesheet" href="uplot.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <h1>sys-telemetry-app</h1>
 <p id="status">waiting for first sample</p>
+<section id="graphs"><h2>Graphs <span id="graph-status"></span></h2>
+<div id="graph-grid"></div>
+<div id="split-box" hidden><h3>Top 10 Applications: RAM <small>(blue)</small> and swap <small>(red)</small></h3><div id="split"></div></div></section>
 <section id="applications"><h2>Applications</h2>
 <input id="app-filter" type="search" placeholder="filter by name or command" aria-label="filter applications">
 <span id="app-filter-error"></span>
@@ -20,6 +24,8 @@
 <input id="filter" type="search" placeholder="filter by PID, name or regex" aria-label="filter processes">
 <span id="filter-error"></span>
 <div class="scroll"><table id="proc-table"><thead><tr></tr></thead><tbody></tbody></table></div></section>
+<script src="uplot.min.js"></script>
 <script src="app.js"></script>
+<script src="graphs.js"></script>
 </body>
 </html>

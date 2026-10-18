@@ -1,0 +1,1 @@
+uPlot 1.6.31 (MIT), vendored from the npm package 'uplot' dist/uPlot.iife.min.js and dist/uPlot.min.css. Do not edit; replace by re-downloading.

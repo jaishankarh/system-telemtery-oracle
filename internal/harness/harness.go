@@ -33,6 +33,11 @@
 // nothing can name. Each has /proc/<pid>/{cgroup,cwd (symlink),stat,status,...}.
 // Application endpoint: GET /api/applications?sort=<json field>&order=asc|desc&filter=<regex>.
 //
+// Fixture "laptop-live" is the laptop fixture plus /proc/pressure/{cpu,memory,io} and
+// /proc/diskstats (nvme0n1 with a partition, loop0, zram0). Live API: GET /api/live,
+// /api/live/stream (SSE), /api/live/stats (see internal/server/live.go); tests in
+// internal/server/live_test.go show how to open a stream.
+//
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
 // container sockets, fake GPU reader) as new fields on Machine.

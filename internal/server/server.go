@@ -22,17 +22,19 @@ type Server struct {
 	apps     atomic.Pointer[[]grouping.Application] // grouped from latest, same moment
 	grouper  *grouping.Grouper
 	interval time.Duration
+	live     *liveFeed // live.go
 }
 
 // New creates a Server that reports the given sampling interval.
 func New(interval time.Duration, g *grouping.Grouper) *Server {
-	return &Server{interval: interval, grouper: g}
+	return &Server{interval: interval, grouper: g, live: newLiveFeed()}
 }
 
 // Update publishes a new latest Sample.
 func (s *Server) Update(sample collector.Sample) {
 	apps := s.grouper.Group(sample.Processes)
 	s.apps.Store(&apps)
+	s.live.publish(sample, apps) // before latest, so a visible sample is already in the Live buffer
 	s.latest.Store(&sample)
 }
 
@@ -51,6 +53,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/processes", s.processes)
 	mux.HandleFunc("/api/applications", s.applications)
+	s.registerLive(mux)
 	sub, _ := fs.Sub(assets, "assets")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	return mux
