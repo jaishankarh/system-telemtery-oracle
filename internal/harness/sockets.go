@@ -36,6 +36,13 @@ func (s *sockets) dial(virtual string) (net.Conn, error) {
 	return net.Dial("unix", real)
 }
 
+// removeAll makes every runtime socket disappear, as if no runtime were installed.
+func (s *sockets) removeAll() {
+	s.mu.Lock()
+	s.at = map[string]string{}
+	s.mu.Unlock()
+}
+
 func (s *sockets) serve(virtual string, srv *http.Server) {
 	s.t.Helper()
 	s.mu.Lock()

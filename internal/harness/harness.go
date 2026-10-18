@@ -46,6 +46,11 @@
 // a "container" object in /api/applications (runtime, started_by,
 // memory_limit_bytes, containers).
 //
+// Degradation variants (variants.go): harness.NewModern(t) has every optional source; m.AsCgroupV1(),
+// m.WithoutPSI(), WithoutGPU(), WithoutContainerRuntime(), WithoutSystemd(), CompressedSwapOnly() and
+// OldKernelWithoutSmapsRollup() take one away. Assert on /api/availability and the `report` section
+// "Unavailable on this machine".
+//
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
 // container sockets, fake GPU reader) as new fields on Machine.

@@ -51,6 +51,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"interval_seconds": s.interval.Seconds()})
 	})
+	mux.HandleFunc("/api/availability", func(w http.ResponseWriter, r *http.Request) {
+		if sm := s.latest.Load(); sm != nil {
+			writeJSON(w, sm.Availability) // what is unavailable and why (ADR 0006)
+			return
+		}
+		http.Error(w, "no sample yet", http.StatusServiceUnavailable)
+	})
 	mux.HandleFunc("/api/processes", s.processes)
 	mux.HandleFunc("/api/applications", s.applications)
 	s.registerLive(mux)

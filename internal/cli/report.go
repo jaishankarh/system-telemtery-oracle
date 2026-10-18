@@ -55,9 +55,7 @@ func report(env Env, col collector.Collector) int {
 	}
 	topApplications(w, env, s)
 	topProcesses(w, s)
-	for _, p := range s.Missing {
-		fmt.Fprintf(w, "missing data source: %s\n", p)
-	}
+	unavailableSection(w, s)
 	return 0
 }
 
@@ -112,9 +110,6 @@ func topProcesses(w io.Writer, s collector.Sample) {
 		}
 		fmt.Fprintf(w, "%7d %-10s %10s %10s %10s %6s  %s\n", p.PID, p.User, mibp(p.PSS), mibp(p.Swap), mibp(p.RSS), cpu, oneLine(p.Command))
 	}
-	for _, m := range s.ProcessMissing {
-		fmt.Fprintf(w, "missing data source: %s\n", m)
-	}
 }
 
 func mibp(b *uint64) string {
@@ -127,4 +122,20 @@ func mibp(b *uint64) string {
 // oneLine keeps a command line with embedded newlines on one report row.
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(s, "\n", " ")), " ")
+}
+
+// unavailableSection lists the data this machine cannot provide, with the
+// reason, and the Advice rules that are disabled because of it (ADR 0006).
+func unavailableSection(w io.Writer, s collector.Sample) {
+	a := s.Availability
+	if len(a.Unavailable) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\nUnavailable on this machine\n")
+	for _, u := range a.Unavailable {
+		fmt.Fprintf(w, "  %s: %s\n", u.Feature, u.Reason)
+	}
+	for _, r := range a.DisabledRules {
+		fmt.Fprintf(w, "  Advice %q: %s\n", r.Rule, r.Reason)
+	}
 }
