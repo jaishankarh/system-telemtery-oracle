@@ -92,6 +92,10 @@ type SwapActivity struct {
 	DiskUnknown string // non-empty: Disk Swap activity cannot be told from Compressed Swap
 	VmstatGone  bool
 	Attribution string // human text for evidence
+	// DiskWriteBytesPerDay estimates the daily Disk Swap write volume from the
+	// trailing DiskWriteObserved of samples; nil until a full Sustained window was observed.
+	DiskWriteBytesPerDay *float64
+	DiskWriteObserved    time.Duration
 }
 
 type swapCounters struct {

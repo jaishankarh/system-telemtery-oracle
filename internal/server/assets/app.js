@@ -232,10 +232,17 @@ function adviceItem(a, presets) {
   d.append(sm, ul);
   el.append(d);
   if (a.change) {
+    // The <pre> holds exactly the text to copy; target and note sit outside it.
+    const where = document.createElement("p");
+    where.textContent = `Put this in ${a.change.target}:`;
     const pre = document.createElement("pre");
     pre.className = "change";
-    pre.textContent = `# ${a.change.kind}: ${a.change.target}\n${a.change.content}`;
-    el.append(pre);
+    pre.textContent = a.change.content;
+    const btn = document.createElement("button");
+    btn.textContent = "Copy";
+    btn.onclick = () => navigator.clipboard.writeText(a.change.content).then(() => { btn.textContent = "Copied"; });
+    el.append(where, pre, btn);
+    if (a.change.note) { const n = document.createElement("p"); n.textContent = a.change.note; el.append(n); }
   }
   el.append(adviceControls(a, presets));
   return el;

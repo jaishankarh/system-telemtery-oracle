@@ -93,17 +93,29 @@ func TestHardwareLimitFiresOnlyAfterSustainedWindow(t *testing.T) {
 	for i := 0; i < 140; i++ { // 280s < 5 min
 		thrashTick(m, p)
 	}
-	if d := getAdvice(p); len(d.Advice) != 0 || len(d.Pending) != 1 {
-		t.Fatalf("before the window: advice=%d pending=%d", len(d.Advice), len(d.Pending))
+	d := getAdvice(p)
+	hwPending := 0
+	for _, x := range d.Pending {
+		if x.ID == "hardware-limit" {
+			hwPending++
+		}
+	}
+	if hwPending != 1 || len(findAll(d, "hardware-limit")) != 0 {
+		t.Fatalf("before the window: advice=%d pending=%+v", len(d.Advice), d.Pending)
 	}
 	for i := 0; i < 20; i++ {
 		thrashTick(m, p)
 	}
-	d := getAdvice(p)
-	if len(d.Advice) != 1 || d.WindowSeconds != 300 {
+	d = getAdvice(p)
+	if len(findAll(d, "hardware-limit")) != 1 || d.WindowSeconds != 300 {
 		t.Fatalf("advice = %+v window %v", d.Advice, d.WindowSeconds)
 	}
 	a := d.Advice[0]
+	for _, x := range d.Advice {
+		if x.Rule == "hardware-limit" {
+			a = x
+		}
+	}
 	if a.Category != "hardware_limit" || a.Severity != "critical" || a.Rule != "hardware-limit" || a.ID == "" || a.Change != nil {
 		t.Fatalf("advice = %+v", a)
 	}
@@ -143,8 +155,10 @@ func TestCompressedSwapThrashingIsNotAHardwareLimit(t *testing.T) {
 		m.AddZramActivity("zram0", 400, 400) // all swap traffic is on zram
 		thrashTick(m, p)
 	}
-	if d := getAdvice(p); len(d.Advice) != 0 {
-		t.Fatalf("advice = %+v", d.Advice)
+	for _, a := range getAdvice(p).Advice {
+		if a.Rule == "hardware-limit" {
+			t.Fatalf("Compressed Swap Thrashing alone is not a Hardware Limit: %+v", a)
+		}
 	}
 }
 
@@ -189,19 +203,29 @@ func TestBadAdvisorConfigIsRejected(t *testing.T) {
 	}
 }
 
+// hwDisabled returns the reasons the Hardware Limit rule is disabled.
+func hwDisabled(d adviceDoc) []string {
+	var out []string
+	for _, x := range d.Disabled {
+		if x.Rule == "hardware-limit" {
+			out = append(out, x.Reason)
+		}
+	}
+	return out
+}
+
 func TestDisabledAdviceIsListedWithReason(t *testing.T) {
 	m := harness.New(t, tree)
 	p := m.Start()
 	d := getAdvice(p)
-	if len(d.Disabled) != 1 || d.Disabled[0].Rule != "hardware-limit" ||
-		!strings.Contains(d.Disabled[0].Reason, "/proc/pressure/memory") {
+	if h := hwDisabled(d); len(h) != 1 || !strings.Contains(h[0], "/proc/pressure/memory") {
 		t.Fatalf("disabled = %+v", d.Disabled)
 	}
 	m.SetMemoryPSI(0, 0)
 	p.Tick()
 	d = getAdvice(p)
-	if len(d.Disabled) != 1 || !strings.Contains(d.Disabled[0].Reason, "Disk Swap") ||
-		!strings.Contains(d.Disabled[0].Reason, "/sys/block/zram0/stat") {
+	if h := hwDisabled(d); len(h) != 1 || !strings.Contains(h[0], "Disk Swap") ||
+		!strings.Contains(h[0], "/sys/block/zram0/stat") {
 		t.Fatalf("both swap kinds without zram counters: %+v", d.Disabled)
 	}
 	m.AddZramActivity("zram0", 0, 0)
@@ -211,7 +235,7 @@ func TestDisabledAdviceIsListedWithReason(t *testing.T) {
 	}
 	m.Remove("/proc/vmstat")
 	p.Tick()
-	if d = getAdvice(p); len(d.Disabled) != 1 || !strings.Contains(d.Disabled[0].Reason, "/proc/vmstat") {
+	if d = getAdvice(p); len(hwDisabled(d)) != 1 || !strings.Contains(hwDisabled(d)[0], "/proc/vmstat") {
 		t.Fatalf("disabled = %+v", d.Disabled)
 	}
 }
@@ -292,4 +316,15 @@ func TestDashboardHasAdvicePanelAtTop(t *testing.T) {
 	if !strings.Contains(string(js), "/api/advice") {
 		t.Fatal("dashboard script does not load /api/advice")
 	}
+}
+
+// findAll returns the IDs of the Advice raised by one rule.
+func findAll(d adviceDoc, rule string) []string {
+	var out []string
+	for _, a := range d.Advice {
+		if a.Rule == rule {
+			out = append(out, a.ID)
+		}
+	}
+	return out
 }
