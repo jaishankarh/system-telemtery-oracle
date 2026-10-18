@@ -6,6 +6,7 @@
 package machine
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -35,11 +36,14 @@ type Machine struct {
 	StateDir string
 	// Host is what the program may change (its own OOM score and systemd unit).
 	Host Host
+	// Dial connects to a unix socket at an absolute path (container runtime
+	// sockets). Tests point it at fake sockets.
+	Dial func(path string) (net.Conn, error)
 }
 
 // Real returns the Machine backed by the actual system.
 func Real() Machine {
-	return Machine{Root: "/", Clock: realClock{}, StateDir: "/var/lib/sys-telemetry-app", Host: realHost{}}
+	return Machine{Root: "/", Clock: realClock{}, StateDir: "/var/lib/sys-telemetry-app", Host: realHost{}, Dial: realDial}
 }
 
 // Path maps an absolute system path such as "/proc/meminfo" under Root.
