@@ -1,0 +1,4 @@
+body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+pre { margin: 0; }
+section { margin-bottom: 12px; }
+@media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
