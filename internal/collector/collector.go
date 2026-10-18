@@ -20,6 +20,12 @@ type Sample struct {
 	Memory  *Memory   `json:"memory"`
 	Swap    Swap      `json:"swap"`
 	Missing []string  `json:"missing"`
+
+	// Processes is served by /api/processes, not inside /api/system.
+	Processes []Process `json:"-"`
+	// ProcessMissing lists per-process sources the kernel lacks (ADR 0006),
+	// with the PID replaced by the literal "PID".
+	ProcessMissing []string `json:"-"`
 }
 
 // CPU is total utilisation and load.

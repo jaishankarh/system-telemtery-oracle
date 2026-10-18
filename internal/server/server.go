@@ -40,6 +40,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"interval_seconds": s.interval.Seconds()})
 	})
+	mux.HandleFunc("/api/processes", s.processes)
 	sub, _ := fs.Sub(assets, "assets")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	return mux

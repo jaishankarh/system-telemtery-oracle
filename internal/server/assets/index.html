@@ -12,6 +12,10 @@
 <section><h2>CPU</h2><pre id="cpu"></pre></section>
 <section><h2>RAM</h2><pre id="ram"></pre></section>
 <section><h2>Swap</h2><pre id="swap"></pre></section>
+<section id="processes"><h2>Processes</h2>
+<input id="filter" type="search" placeholder="filter by PID, name or regex" aria-label="filter processes">
+<span id="filter-error"></span>
+<div class="scroll"><table id="proc-table"><thead><tr></tr></thead><tbody></tbody></table></div></section>
 <script src="app.js"></script>
 </body>
 </html>

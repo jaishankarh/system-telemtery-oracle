@@ -24,3 +24,64 @@ async function refresh() {
 }
 refresh();
 setInterval(refresh, 2000);
+
+// Processes view: sorting and filtering are done by /api/processes.
+const COLUMNS = [
+  ["pid", "PID", "text"], ["user", "User", "text"], ["name", "Name", "text"],
+  ["rss_bytes", "RSS", "bytes"], ["pss_bytes", "PSS", "bytes"], ["swap_bytes", "Swap", "bytes"],
+  ["cpu_percent", "CPU %", "pct"], ["disk_read_bytes_per_sec", "Read/s", "bytes"],
+  ["disk_write_bytes_per_sec", "Write/s", "bytes"], ["threads", "Threads", "n"],
+  ["open_fds", "FDs", "n"], ["command", "Command", "cmd"],
+];
+const procView = { sort: "pss_swap", order: "desc" };
+const mib = b => (b / 2 ** 20).toFixed(1) + " MiB";
+function cell(v, kind) {
+  if (v == null) return "n/a";
+  if (kind === "bytes") return mib(v);
+  if (kind === "pct") return v.toFixed(1);
+  return String(v);
+}
+function buildHeader() {
+  const tr = document.querySelector("#proc-table thead tr");
+  COLUMNS.forEach(([key, label, kind]) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    th.dataset.key = key;
+    if (kind === "text" || kind === "cmd") th.className = "text";
+    th.onclick = () => {
+      procView.order = procView.sort === key && procView.order === "desc" ? "asc" : (procView.sort === key ? "desc" : (kind === "text" || kind === "cmd" ? "asc" : "desc"));
+      procView.sort = key;
+      refreshProcesses();
+    };
+    tr.appendChild(th);
+  });
+}
+async function refreshProcesses() {
+  const q = new URLSearchParams({ sort: procView.sort, order: procView.order, filter: document.getElementById("filter").value });
+  const err = document.getElementById("filter-error");
+  try {
+    const r = await fetch("/api/processes?" + q);
+    if (!r.ok) { err.textContent = (await r.text()).trim(); return; }
+    err.textContent = "";
+    const l = await r.json();
+    document.querySelectorAll("#proc-table th").forEach(th => {
+      th.textContent = COLUMNS.find(c => c[0] === th.dataset.key)[1] + (th.dataset.key === procView.sort ? (procView.order === "desc" ? " \u25BE" : " \u25B4") : "");
+    });
+    const body = document.querySelector("#proc-table tbody");
+    body.replaceChildren(...l.processes.map(p => {
+      const tr = document.createElement("tr");
+      COLUMNS.forEach(([key, , kind]) => {
+        const td = document.createElement("td");
+        td.textContent = cell(p[key], kind);
+        if (kind === "text" || kind === "cmd") td.className = kind === "cmd" ? "text cmd" : "text";
+        if (kind === "cmd") td.title = p[key];
+        tr.appendChild(td);
+      });
+      return tr;
+    }));
+  } catch (e) { err.textContent = "disconnected"; }
+}
+buildHeader();
+document.getElementById("filter").addEventListener("input", refreshProcesses);
+refreshProcesses();
+setInterval(refreshProcesses, 2000);

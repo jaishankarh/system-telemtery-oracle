@@ -7,7 +7,7 @@
 // API:
 //
 //	m := harness.New(t, "laptop-disk-and-zram") // copy testdata/fixtures/<name> to a temp root
-//	m.WriteFile("/proc/vmstat", "pswpin 5\n")   // change the machine (also: Remove)
+//	m.WriteFile("/proc/vmstat", "pswpin 5\n")   // change the machine (also: Remove, ReadFile)
 //	m.Clock.Advance(2 * time.Second)            // controllable clock (Clock.OnSleep hook too)
 //
 //	out := m.Report()                            // run `report`, return stdout
@@ -16,6 +16,13 @@
 //	p.Tick()                                     // advance one collection interval, wait for it
 //	p.Stop()                                     // cancel (also registered with t.Cleanup)
 //	m.Run(args...)                               // run any CLI invocation, returns code, stdout, stderr
+//
+// Fixture "dev-box-process-tree" is the laptop fixture plus a recorded process
+// tree: /proc/<pid>/{stat,status,cmdline,io,smaps_rollup,fd/*} for five
+// processes (init, a kernel thread, an editor extension host, a browser content
+// process and a node server) and /etc/passwd. Edit those files with WriteFile
+// to move a process's counters between Ticks. Process endpoint: GET
+// /api/processes?sort=<json field>&order=asc|desc&filter=<pid or regex>.
 //
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
@@ -90,6 +97,17 @@ func (m *Machine) WriteFile(path, content string) {
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		m.t.Fatal(err)
 	}
+}
+
+// ReadFile returns the current content of a file on the fake machine, so a
+// test can edit a recorded file (for example bump a counter in /proc/<pid>/stat).
+func (m *Machine) ReadFile(path string) string {
+	m.t.Helper()
+	b, err := os.ReadFile(filepath.Join(m.Root, path))
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	return string(b)
 }
 
 // Remove deletes a file, simulating a missing data source.

@@ -46,6 +46,19 @@ func (m Machine) Path(p string) string { return filepath.Join(m.Root, p) }
 // ReadFile reads an absolute system path through the Machine.
 func (m Machine) ReadFile(p string) ([]byte, error) { return os.ReadFile(m.Path(p)) }
 
+// ReadDir lists the entry names of an absolute system directory through the Machine.
+func (m Machine) ReadDir(p string) ([]string, error) {
+	es, err := os.ReadDir(m.Path(p))
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(es))
+	for i, e := range es {
+		names[i] = e.Name()
+	}
+	return names, nil
+}
+
 // Glob lists absolute system paths matching pattern, relative to Root.
 func (m Machine) Glob(pattern string) []string {
 	matches, _ := filepath.Glob(m.Path(pattern))

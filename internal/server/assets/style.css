@@ -1,4 +1,11 @@
 body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
 pre { margin: 0; }
 section { margin-bottom: 12px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 2px 8px; text-align: right; white-space: nowrap; }
+th { cursor: pointer; user-select: none; position: sticky; top: 0; background: inherit; }
+th.text, td.text { text-align: left; }
+td.cmd { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; }
+.scroll { overflow-x: auto; }
+#filter-error { color: #b00; margin-left: 8px; }
 @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }

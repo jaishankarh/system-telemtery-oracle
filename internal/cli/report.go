@@ -2,6 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
@@ -50,6 +53,7 @@ func report(env Env, col collector.Collector) int {
 	} else {
 		fmt.Fprintln(w, "Swap-in/out rates unavailable")
 	}
+	topProcesses(w, s)
 	for _, p := range s.Missing {
 		fmt.Fprintf(w, "missing data source: %s\n", p)
 	}
@@ -70,3 +74,54 @@ func pct(v *float64) string {
 	}
 	return fmt.Sprintf("total %.1f%%  ", *v)
 }
+
+const topProcessCount = 15
+
+// topProcesses prints the processes with the largest PSS + swap.
+func topProcesses(w io.Writer, s collector.Sample) {
+	if len(s.Processes) == 0 {
+		return
+	}
+	total := func(p collector.Process) uint64 {
+		var t uint64
+		if p.PSS != nil {
+			t += *p.PSS
+		}
+		if p.Swap != nil {
+			t += *p.Swap
+		}
+		return t
+	}
+	ps := append([]collector.Process(nil), s.Processes...)
+	sort.SliceStable(ps, func(i, j int) bool {
+		if a, b := total(ps[i]), total(ps[j]); a != b {
+			return a > b
+		}
+		return ps[i].PID < ps[j].PID
+	})
+	if len(ps) > topProcessCount {
+		ps = ps[:topProcessCount]
+	}
+	fmt.Fprintf(w, "\nTop processes by PSS + swap\n")
+	fmt.Fprintf(w, "%7s %-10s %10s %10s %10s %6s  %s\n", "PID", "USER", "PSS", "SWAP", "RSS", "CPU%", "COMMAND")
+	for _, p := range ps {
+		cpu := "n/a"
+		if p.CPU != nil {
+			cpu = fmt.Sprintf("%.1f", *p.CPU)
+		}
+		fmt.Fprintf(w, "%7d %-10s %10s %10s %10s %6s  %s\n", p.PID, p.User, mibp(p.PSS), mibp(p.Swap), mibp(p.RSS), cpu, oneLine(p.Command))
+	}
+	for _, m := range s.ProcessMissing {
+		fmt.Fprintf(w, "missing data source: %s\n", m)
+	}
+}
+
+func mibp(b *uint64) string {
+	if b == nil {
+		return "n/a"
+	}
+	return mib(*b)
+}
+
+// oneLine keeps a command line with embedded newlines on one report row.
+func oneLine(s string) string { return strings.Join(strings.Fields(strings.ReplaceAll(s, "\n", " ")), " ") }
