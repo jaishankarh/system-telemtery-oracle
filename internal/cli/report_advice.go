@@ -10,6 +10,7 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/advisor"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/history"
 )
 
 // adviceSection prints current Advice. Sustained needs a window of history, so
@@ -24,6 +25,9 @@ func adviceSection(w io.Writer, env Env, cfg config.Config, first, second collec
 		return
 	}
 	adv := advisor.New(env.Machine, cfg.Advisor, advisor.DefaultRules())
+	if env.Machine.Exists(history.Path(env.Machine.StateDir)) {
+		adv.SetPeakSource(func(since time.Time) (history.Peaks, error) { return history.ReadPeaks(env.Machine.StateDir, since) })
+	}
 	g := newGrouper(env)
 	adv.Observe(first, g.Group(first.Processes))
 	adv.Observe(second, g.Group(second.Processes))

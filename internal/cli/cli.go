@@ -117,6 +117,9 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 	rec := startHistory(env, ctx, newGrouper(env), first)
 	defer rec.Close()
 	adv.SetEventSink(adviceEventsToHistory(rec))
+	if rec.Recorder != nil {
+		adv.SetPeakSource(rec.Recorder.Peaks)
+	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port)) // loopback only (ADR 0003)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/history"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
@@ -27,6 +28,11 @@ type Advisor struct {
 	now        time.Time
 	events     []Event
 	sink       func(Event)
+
+	peakSource func(since time.Time) (history.Peaks, error)
+	peakAt     time.Time
+	peakCache  history.Peaks
+	peakErr    error
 
 	marked   map[string]Marked // Hidden and Snoozed Advice by ID (state.go)
 	writable bool
@@ -59,6 +65,24 @@ func (a *Advisor) SetEventSink(f func(Event)) {
 	a.mu.Unlock()
 }
 
+// SetPeakSource gives the Advisor access to History's Application peaks (the
+// running Recorder, or the History file for a one-shot report). Without it the
+// rules that need the 24-hour peak are disabled with a reason.
+func (a *Advisor) SetPeakSource(f func(since time.Time) (history.Peaks, error)) {
+	a.mu.Lock()
+	a.peakSource = f
+	a.mu.Unlock()
+}
+
+// peaks reads History at most every peakCacheFor, only when a rule asks.
+func (a *Advisor) peaks(now time.Time) (history.Peaks, error) {
+	if a.peakAt.IsZero() || now.Sub(a.peakAt) >= peakCacheFor {
+		a.peakCache, a.peakErr = a.peakSource(now.Add(-peakWindow))
+		a.peakAt = now
+	}
+	return a.peakCache, a.peakErr
+}
+
 // Observe evaluates every rule against one Sample taken at sample.Time.
 func (a *Advisor) Observe(s collector.Sample, apps []grouping.Application) {
 	a.mu.Lock()
@@ -73,6 +97,9 @@ func (a *Advisor) Observe(s collector.Sample, apps []grouping.Application) {
 	a.diskWrites.add(now, in.Swap.Disk.Out)
 	in.Swap.DiskWriteBytesPerDay, in.Swap.DiskWriteObserved = a.diskWrites.estimate()
 
+	if a.peakSource != nil {
+		in.Peaks = func() (history.Peaks, error) { return a.peaks(now) }
+	}
 	seen := map[string]bool{}
 	a.disabled = a.disabled[:0]
 	for _, r := range a.rules {

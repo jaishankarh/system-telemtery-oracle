@@ -134,6 +134,7 @@ func parseContainer(b []byte) Info {
 	case labels[labelContainer] != "":
 		in.Name = labels[labelContainer]
 	}
+	in.ComposeProject, in.ComposeService = labels[labelCompose], labels[labelComposeSvc]
 	in.StartedBy = startedBy(labels, StartedContainerd)
 	if in.StartedBy == StartedContainerd && labels[labelNerdctlName] != "" {
 		in.StartedBy = StartedNerdctl

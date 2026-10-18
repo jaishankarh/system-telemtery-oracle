@@ -231,7 +231,8 @@ func TestDisabledAdviceIsListedWithReason(t *testing.T) {
 	}
 	m.AddZramActivity("zram0", 0, 0)
 	p.Tick()
-	if d = getAdvice(p); len(d.Disabled) != 0 {
+	// This machine has no container runtime, so Uncapped container is rightly disabled (see container_limit_test.go).
+	if d = getAdvice(p); len(d.Disabled) != 1 || d.Disabled[0].Rule != "container-limit" {
 		t.Fatalf("disabled = %+v", d.Disabled)
 	}
 	m.Remove("/proc/vmstat")

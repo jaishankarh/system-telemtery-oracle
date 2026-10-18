@@ -6,6 +6,7 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/history"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
@@ -51,6 +52,9 @@ type Input struct {
 	Swap      SwapActivity
 	// Swappiness is vm.swappiness; nil when /proc/sys/vm/swappiness is unreadable.
 	Swappiness *int
+	// Peaks reads the Application peaks of the last 24 hours from History; nil
+	// when no History is available (the Uncapped container rule is then disabled).
+	Peaks func() (history.Peaks, error)
 }
 
 // WorkingSet is the sum over Applications of PSS + swap. ok is false when no
@@ -85,7 +89,7 @@ func (in *Input) TopApps(n int) []AppRef {
 
 // DefaultRules lists every rule. Tickets #13-#17 add theirs here.
 func DefaultRules() []Rule {
-	return []Rule{HardwareLimitRule{}, SwappinessRule{}, CompressedSwapThrashingRule{}, SwapWearRule{}, EditorWatcherRule{}, BrowserSprawlRule{}}
+	return []Rule{HardwareLimitRule{}, SwappinessRule{}, CompressedSwapThrashingRule{}, SwapWearRule{}, EditorWatcherRule{}, BrowserSprawlRule{}, UncappedContainerRule{}}
 }
 
 func fnum(name string, v float64, unit string) Fact { return Fact{Name: name, Value: &v, Unit: unit} }
