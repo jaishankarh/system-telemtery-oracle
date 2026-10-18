@@ -20,6 +20,7 @@ function renderUnavailable(a) {
   }));
 }
 async function refresh() {
+  if (Replay.active()) return; // the status line and system boxes show the selected time, see timeslider.js
   try {
     const s = await (await fetch("/api/system")).json();
     document.getElementById("status").textContent = "sampled " + s.time;
@@ -80,13 +81,27 @@ function renderHead(sel, cols, view, again) {
   }));
 }
 async function refreshProcesses() {
+  if (Replay.active()) return renderProcessesReplay();
   const q = new URLSearchParams({ sort: procView.sort, order: procView.order, filter: document.getElementById("filter").value });
   const err = document.getElementById("filter-error");
   try {
     const r = await fetch("/api/processes?" + q);
     if (!r.ok) { err.textContent = (await r.text()).trim(); return; }
     err.textContent = "";
-    const l = await r.json();
+    paintProcesses(await r.json());
+  } catch (e) { err.textContent = "disconnected"; }
+}
+// Replay: the Processes recorded in History at the selected time, filtered and sorted here.
+function renderProcessesReplay() {
+  const err = document.getElementById("filter-error");
+  try {
+    const rows = Replay.processesFrom(Replay.state.atResult && Replay.state.atResult.sample, { filter: document.getElementById("filter").value, sort: procView.sort, order: procView.order });
+    err.textContent = "";
+    paintProcesses({ processes: rows });
+  } catch (e) { err.textContent = e.message; }
+}
+function paintProcesses(l) {
+  {
     const cols = visible(COLUMNS, l.processes);
     renderHead("#proc-table", cols, procView, refreshProcesses);
     const body = document.querySelector("#proc-table tbody");
@@ -101,7 +116,7 @@ async function refreshProcesses() {
       });
       return tr;
     }));
-  } catch (e) { err.textContent = "disconnected"; }
+  }
 }
 document.getElementById("filter").addEventListener("input", refreshProcesses);
 refreshProcesses();
@@ -122,7 +137,7 @@ function appRow(a, cols) {
   tr.onclick = () => { appView.open.has(a.id) ? appView.open.delete(a.id) : appView.open.add(a.id); refreshApplications(); };
   cols.forEach(([key, , kind]) => {
     const td = document.createElement("td");
-    let v = key === "primary_pids" ? a.primary_pids.join(", ") : a[key];
+    let v = key === "primary_pids" ? (a.primary_pids || []).join(", ") : a[key];
     if (key === "name") v = (appView.open.has(a.id) ? "\u25BE " : "\u25B8 ") + v;
     td.textContent = kind === "pids" ? v : cell(v, kind);
     if (kind === "text" || kind === "pids") td.className = "text";
@@ -137,6 +152,8 @@ function drilldown(a, cols) {
   td.colSpan = cols.length;
   td.className = "text";
   const t = document.createElement("table");
+  const note = Replay.active() ? Replay.appProcessNote(a) : "";
+  if (note) { const n = document.createElement("p"); n.className = "trunc"; n.textContent = note; td.appendChild(n); }
   a.processes.forEach(p => {
     const r = document.createElement("tr");
     [p.pid, p.user, p.role || p.subgroup || "", cell(p.pss_bytes, "bytes"), cell(p.swap_bytes, "bytes"), p.cwd || "", p.command].forEach((v, i) => {
@@ -153,19 +170,31 @@ function drilldown(a, cols) {
   return tr;
 }
 async function refreshApplications() {
+  if (Replay.active()) return renderApplicationsReplay();
   const q = new URLSearchParams({ sort: appView.sort, order: appView.order, filter: document.getElementById("app-filter").value });
   const err = document.getElementById("app-filter-error");
   try {
     const r = await fetch("/api/applications?" + q);
     if (!r.ok) { err.textContent = (await r.text()).trim(); return; }
     err.textContent = "";
-    const l = await r.json();
-    const cols = visible(APP_COLUMNS, l.applications);
-    renderHead("#app-table", cols, appView, refreshApplications);
-    const rows = [];
-    l.applications.forEach(a => { rows.push(appRow(a, cols)); if (appView.open.has(a.id)) rows.push(drilldown(a, cols)); });
-    document.querySelector("#app-table tbody").replaceChildren(...rows);
+    paintApplications(await r.json());
   } catch (e) { err.textContent = "disconnected"; }
+}
+// Replay: the Applications recorded in History at the selected time, filtered and sorted here.
+function renderApplicationsReplay() {
+  const err = document.getElementById("app-filter-error");
+  try {
+    const rows = Replay.applicationsFrom(Replay.state.atResult && Replay.state.atResult.sample, { filter: document.getElementById("app-filter").value, sort: appView.sort, order: appView.order });
+    err.textContent = "";
+    paintApplications({ applications: rows });
+  } catch (e) { err.textContent = e.message; }
+}
+function paintApplications(l) {
+  const cols = visible(APP_COLUMNS, l.applications);
+  renderHead("#app-table", cols, appView, refreshApplications);
+  const rows = [];
+  l.applications.forEach(a => { rows.push(appRow(a, cols)); if (appView.open.has(a.id)) rows.push(drilldown(a, cols)); });
+  document.querySelector("#app-table tbody").replaceChildren(...rows);
 }
 document.getElementById("app-filter").addEventListener("input", refreshApplications);
 refreshApplications();
@@ -179,6 +208,7 @@ function adviceFact(f) {
   return `${f.name}: ${f.value.toFixed(1)} ${f.unit || ""}${avg}`;
 }
 async function adviceAction(name, body) {
+  if (!Replay.controlsAllowed()) return; // Hide/Snooze change state: Live only
   try {
     const r = await fetch("/api/advice/" + name, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) alert((await r.text()).trim());
@@ -250,7 +280,31 @@ function adviceItem(a, presets) {
   el.append(adviceControls(a, presets));
   return el;
 }
+// Replay: Advice that was active at the selected time, rebuilt from the Advice events in History.
+// No Hide, Snooze or Unhide: those change state and apply to the present only.
+function replayAdviceItem(a) {
+  const el = document.createElement("article");
+  el.className = "advice sev-" + a.severity;
+  el.dataset.adviceId = a.advice_id;
+  const h = document.createElement("h3");
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = a.severity;
+  h.append(badge, ` ${a.category === "hardware_limit" ? "Hardware Limit" : "Settings Fix"}: ${a.title}`);
+  const p = document.createElement("p");
+  p.textContent = "Active since " + Replay.clockSeconds(Date.parse(a.since)) + (a.applications && a.applications.length ? "; Applications: " + a.applications.join(", ") : "");
+  el.append(h, p);
+  return el;
+}
+function renderAdviceReplay() {
+  const at = Replay.state.atResult;
+  const list = document.getElementById("advice-list");
+  const advice = at ? at.advice : [];
+  list.replaceChildren(...(advice.length ? advice.map(replayAdviceItem) : [Object.assign(document.createElement("p"), { textContent: "No Advice was active at this time." })]));
+  for (const id of ["advice-pending", "advice-hidden", "advice-disabled"]) document.getElementById(id).replaceChildren();
+}
 async function refreshAdvice() {
+  if (Replay.active()) return renderAdviceReplay();
   try {
     const r = await fetch("/api/advice");
     if (!r.ok) return;
