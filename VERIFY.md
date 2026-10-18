@@ -36,6 +36,23 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` (with the instance above running) prints an "Advice" section from the running instance; with it stopped, it says it cannot verify the Sustained window and lists current conditions and disabled rules
 - [ ] Swap attribution on a machine with both zram and a swap file: `cat /sys/block/zram0/stat` counters increase when swapping, and `disk_swap_in/out` in the evidence is what is left after subtracting them from `grep -E 'pswp(in|out)' /proc/vmstat`
 
+## Ticket 13: Dashboard time slider and Replay
+
+Run as root on the Ubuntu laptop. Let the program run at least 15 minutes (a few hours is better) so History has something to slide through.
+
+- [ ] `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run`, open http://127.0.0.1:9191
+- [ ] A "Time" slider sits at the top, at the far right, labelled "Live"; beside it a line "History: <oldest> to <newest>"
+- [ ] `curl -s localhost:9191/api/history/span | head -c 400` shows `oldest`, `newest`, `interval_seconds: 10`, `events`
+- [ ] Drag the slider left: the label shows the time, an orange banner says "Replay of <time>. Nothing on this page is current."
+- [ ] Applications, Processes, Graphs and the Advice panel all change to that time; the Applications and Processes notes say "History keeps only the top 10 Applications ... Showing 10 of N" and "up to 8 Processes per Application"
+- [ ] Expanding an Application with more than 8 Processes says "Showing 8 of N Processes"
+- [ ] Graphs: one hour around the selected time; the swap-in/swap-out chart has vertical lines for Advice start (red), Severity change (orange), end (green, dashed), and the list under "Graphs" reads like "Thrashing started 23:10" (cause some Advice, for example `stress-ng --vm 4 --vm-bytes 90% -t 10m` on a small-RAM machine, then wait for the Sustained window)
+- [ ] While in the past, the Advice panel shows no Hide, Snooze or Unhide controls, and says why
+- [ ] Slide to a time before the program first ran or during a stop: the banner says no History was recorded then
+- [ ] "Back to Live" (or dragging fully right) returns to current data, controls return, graphs stream again
+- [ ] Restart the program, slide back to before the restart: the Advice events from before it are still shown
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 replay --minutes 30` shows `ADVICE advice_start` lines for the same Advice
+
 ## Ticket 14: swap Settings Fixes
 
 - [ ] Build and run as root: `make build && sudo ./bin/sys-telemetry-app` (use the binary name from earlier sections), open the dashboard.
@@ -45,6 +62,17 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] Swap wear: with Disk Swap written steadily (for example a stress job that overcommits RAM for 35+ minutes) `swap-wear` appears with a GB/day figure in the title and in Evidence (`disk_swap_write_gb_per_day`) that matches `vmstat` pswpout x 4 KiB x 86400.
 - [ ] Dashboard Advice panel shows the text in a box with a Copy button; pasting it gives only the file content.
 - [ ] After all of this: `ls /etc/sysctl.d/99-swappiness.conf /etc/sysctl.d/99-zram-swap.conf /etc/systemd/zram-generator.conf` shows files you did not create do not exist, and `cat /proc/sys/vm/swappiness` is unchanged.
+
+## Ticket 15: Uncapped container (suggested memory limit)
+
+- [ ] `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run` (let it run at least 10 minutes with Docker running so History has samples).
+- [ ] Start a container with no limit that uses over 1 GiB (or 256 MiB in swap), for example `docker run -d --name hog python:3 python -c "x=bytearray(1500*1024*1024); import time; time.sleep(99999)"`.
+- [ ] After the advisor window (5 minutes), `curl -s 127.0.0.1:<port>/api/advice | jq '.advice[] | select(.rule=="container-limit")'` shows Advice `container-limit:container:<id>` with category `settings_fix`.
+- [ ] `change.content` is `docker run --memory=NNNNm ...` where NNNN is about 1.25 x the container's highest Working Set (PSS + swap); the evidence fact `peak_basis` states the History window (from/to times) and the top-10 caveat.
+- [ ] For a Compose service, the change is a `services: <service>: deploy: resources: limits: memory:` snippet and the note mentions Compose v2 and `mem_limit`. For a Kubernetes (k3s/kind-less) Pod, a `resources.limits.memory: NNNMi` snippet naming the container.
+- [ ] Recreate the container with `--memory` set: the Advice ends. Nothing was changed by the tool (`docker inspect` shows no limit before you apply it).
+- [ ] With no Docker/containerd socket (or `sudo mv /var/run/docker.sock` away in a VM), the Advice panel lists "Uncapped container" as disabled with a reason about the container runtime.
+- [ ] `./dist/sys-telemetry-app-linux-amd64 report` prints the same Advice when an instance is running.
 
 ## Ticket 16: Editor file-watcher and browser process sprawl Settings Fixes
 
