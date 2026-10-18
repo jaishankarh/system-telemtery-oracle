@@ -34,6 +34,21 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] Dashboard Advice panel shows the text in a box with a Copy button; pasting it gives only the file content.
 - [ ] After all of this: `ls /etc/sysctl.d/99-swappiness.conf /etc/sysctl.d/99-zram-swap.conf /etc/systemd/zram-generator.conf` shows files you did not create do not exist, and `cat /proc/sys/vm/swappiness` is unchanged.
 
+## Ticket 16: Editor file-watcher and browser process sprawl Settings Fixes
+
+Thresholds (fixed in code, window is `advisor_window`, default 5 min): editor rule fires when file-watcher + ripgrep + language-server processes of one Cursor / VS Code / VSCodium / Windsurf together use >= 50% of one core or >= 2 GB PSS. Browser rule fires at >= 8 renderer processes totalling >= 3 GB PSS. To test quickly, add `advisor_window = "30s"` to `/etc/sys-telemetry-app/config.toml`.
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
+- [ ] Editor: open a large git repository in Cursor (or VS Code / Windsurf) with a big `node_modules` and no `files.watcherExclude`; run a project-wide search or a TypeScript/Rust language server indexing so the watcher/ripgrep/language server burn CPU. Check roles with `curl -s localhost:9191/api/applications | jq '.applications[] | select(.name=="Cursor") | .processes[] | {pid, role, cpu_percent, pss_bytes}'`
+- [ ] After the window: `curl -s localhost:9191/api/advice | jq '.advice[] | select(.rule=="editor-file-watcher")'` shows category `settings_fix`, the editor in `applications`, evidence facts, and a `change` whose `target` is `<your repo>/.vscode/settings.json` and `content` is JSON with `files.watcherExclude` and `search.exclude` (node_modules, dist, build, .cache, plus extras like .next / target only if they exist in the repo). The summary names the repo folder as the Project.
+- [ ] Paste the content into that settings.json (merging keys), reload the window: watcher/ripgrep CPU drops and the Advice ends after the editor is quiet.
+- [ ] `sudo ls <repo>/.vscode` before you paste anything: the tool created no file (advice only).
+- [ ] Browser: open 15+ tabs in Chrome/Chromium/Brave/Edge/Firefox so renderers total > 3 GB. `curl -s localhost:9191/api/advice | jq '.advice[] | select(.rule=="browser-process-sprawl") | {summary, change}'` names that browser and gives its own settings: Chrome `chrome://settings/performance` Memory Saver, Brave `brave://settings/system`, Edge `edge://settings/system` sleeping tabs, Chromium the `#high-efficiency-mode-available` flag, Firefox `dom.ipc.processCount`. The text labels each item as a preference or a flag (`--renderer-process-limit=N` is a command-line flag).
+- [ ] Check the named setting really exists in your browser version at the named place (the Memory Saver location moves between releases).
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` shows the same Advice with the change and its Note.
+- [ ] Dashboard Advice panel shows the change in a copyable block and the note under it.
+- [ ] With quiet editors and few tabs, neither rule shows up (and neither appears under "Disabled").
+
 ## Ticket 17: Hide and Snooze Advice
 
 Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run` (a config with `advisor_window = "30s"` and `snooze_presets = "1m, 1d, 7d"` makes this quicker).
