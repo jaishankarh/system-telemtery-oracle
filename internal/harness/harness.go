@@ -15,6 +15,9 @@
 //	p.GetJSON("/api/system", &v)                 // GET + decode JSON from 127.0.0.1
 //	p.Tick()                                     // advance one collection interval, wait for it
 //	p.Stop()                                     // cancel (also registered with t.Cleanup)
+//	p.Kill()                                     // crash: stop without final flush or clean-shutdown mark
+//	p.AppendEvent(history.Event{...})            // what the Advisor does to record Advice start/end/severity
+//	m.TearNewestHistorySlot()                    // simulate a crash mid-flush: the newest slot half written
 //	m.Run(args...)                               // run any CLI invocation, returns code, stdout, stderr
 //
 //	m.Host.OOMScoreAdj / Units / Systemctls / SetRSS(n)  // what the program changed on the fake Host
@@ -75,11 +78,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/cli"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/history"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
@@ -197,9 +202,11 @@ type Program struct {
 	t      *testing.T
 	m      *Machine
 	Addr   string
-	cancel context.CancelFunc
-	done   chan int
-	once   sync.Once
+	cancel context.CancelCauseFunc
+	// History is the event appender the Advisor would use; set once the program has opened History.
+	history atomic.Value
+	done    chan int
+	once    sync.Once
 	// Interval used to advance the clock on Tick.
 	Interval time.Duration
 }
@@ -208,21 +215,22 @@ type Program struct {
 // waits until it is listening. Pass flags such as "--interval", "2s".
 func (m *Machine) Start(args ...string) *Program {
 	m.t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	ready := make(chan string, 1)
 	p := &Program{t: m.t, m: m, cancel: cancel, done: make(chan int, 1), Interval: 2 * time.Second}
 	full := append([]string{"run", "--port", "0"}, args...)
 	go func() {
 		p.done <- cli.Run(ctx, cli.Env{Machine: m.machine(), Stdout: io.Discard, Stderr: io.Discard,
-			OnListen: func(a string) { ready <- a }}, full)
+			OnListen:   func(a string) { ready <- a },
+			OnRecorder: func(e history.EventAppender) { p.history.Store(&e) }}, full)
 	}()
 	select {
 	case p.Addr = <-ready:
 	case code := <-p.done:
-		cancel()
+		cancel(nil)
 		m.t.Fatalf("program exited early with %d", code)
 	case <-time.After(5 * time.Second):
-		cancel()
+		cancel(nil)
 		m.t.Fatal("program did not start listening")
 	}
 	m.t.Cleanup(p.Stop)
@@ -232,13 +240,36 @@ func (m *Machine) Start(args ...string) *Program {
 // Stop cancels the program and waits for it to exit.
 func (p *Program) Stop() {
 	p.once.Do(func() {
-		p.cancel()
+		p.cancel(nil)
 		select {
 		case <-p.done:
 		case <-time.After(5 * time.Second):
 			p.t.Error("program did not stop")
 		}
 	})
+}
+
+// Kill stops the program like a crash or kill -9: no final flush, no clean
+// shutdown mark; whatever was not yet flushed to the History file is lost.
+func (p *Program) Kill() {
+	p.once.Do(func() {
+		p.cancel(cli.ErrKilled)
+		select {
+		case <-p.done:
+		case <-time.After(5 * time.Second):
+			p.t.Error("program did not stop")
+		}
+	})
+}
+
+// AppendEvent records an Advice event in History exactly as the Advisor does.
+func (p *Program) AppendEvent(e history.Event) {
+	p.t.Helper()
+	a, _ := p.history.Load().(*history.EventAppender)
+	if a == nil {
+		p.t.Fatal("History is not open")
+	}
+	(*a).AppendEvent(e)
 }
 
 // Get fetches a path over HTTP and returns status and body.
