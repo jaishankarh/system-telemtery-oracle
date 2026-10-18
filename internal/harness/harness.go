@@ -40,6 +40,20 @@
 //
 // GPUs: m.GPU.Set(gpu.Device{...}) puts NVIDIA GPUs on the machine (the fake NVML
 // reader); AMD/Intel GPUs are sysfs files, e.g. m.WriteFile("/sys/class/drm/card0/device/vendor", "0x1002\n").
+// Container runtimes: m.Docker.Add(harness.DockerContainer{...}) and
+// m.Containerd.Add(harness.ContainerdContainer{...}) create fake sockets
+// (Docker Engine API; containerd gRPC) on first use. m.AddProcess(pid, ppid,
+// comm, cmdline, cgroup, pssKB) adds a recorded process, for example one
+// whose cgroup path names a container. Container and Pod Applications carry
+// a "container" object in /api/applications (runtime, started_by,
+// memory_limit_bytes, containers).
+//
+// Fixture "dev-box-profiles" (regenerate with scripts/gen-profiles-fixture.py)
+// is a desktop running every built-in App Profile: Cursor, VS Code and
+// Windsurf with extension hosts, language servers, ripgrep and a terminal;
+// Android Studio and IntelliJ IDEA with their daemons; Chrome, Chromium, Brave,
+// Edge and Firefox with renderers; a standalone Gradle daemon; the Android
+// emulator. Application members carry a "role" there.
 //
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
@@ -70,8 +84,13 @@ type Machine struct {
 	Clock *FakeClock
 	// Host records what the program would change (OOM score, systemd unit); nothing is really written.
 	Host *FakeHost
-	// GPU is the fake NVIDIA reader (NVML); set GPU.Devices to put NVIDIA GPUs on the machine.
+	// GPU is the fake NVIDIA reader (NVML); use GPU.Set to put NVIDIA GPUs on the machine.
 	GPU *FakeGPU
+	// Docker and Containerd are fake container-runtime sockets. A runtime
+	// nothing was added to has no socket, like a machine without it.
+	Docker     *FakeDocker
+	Containerd *FakeContainerd
+	socks      *sockets
 }
 
 // New creates a fake machine from testdata/fixtures/<fixture>.
@@ -108,11 +127,13 @@ func New(t *testing.T, fixture string) *Machine {
 	if err := os.MkdirAll(filepath.Join(root, "state"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost(), GPU: &FakeGPU{}}
+	socks := newSockets(t)
+	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost(),
+		Docker: &FakeDocker{s: socks}, Containerd: &FakeContainerd{s: socks}, socks: socks, GPU: &FakeGPU{}}
 }
 
 func (m *Machine) machine() machine.Machine {
-	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, GPU: m.GPU}
+	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, Dial: m.socks.dial, GPU: m.GPU}
 }
 
 // WriteFile creates or replaces a file at an absolute system path.
@@ -254,4 +275,10 @@ func (p *Program) Tick() {
 		time.Sleep(2 * time.Millisecond)
 	}
 	p.t.Fatal("program did not take a sample after Tick")
+}
+
+// tryRead returns a file's content or an error (ReadFile fails the test instead).
+func (m *Machine) tryRead(path string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(m.Root, path))
+	return string(b), err
 }

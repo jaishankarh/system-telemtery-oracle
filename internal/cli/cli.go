@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaishankarh/system-telemtery-oracle/internal/advisor"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
-	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/selfguard"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/server"
@@ -30,6 +30,8 @@ type Env struct {
 	Stderr  io.Writer
 	// OnListen, if set, is called with the bound address once the server listens.
 	OnListen func(addr string)
+
+	grouping config.Grouping // user grouping rules from the config file
 }
 
 // RealEnv is the production environment.
@@ -48,8 +50,9 @@ func Run(ctx context.Context, env Env, args []string) int {
 			fmt.Fprintln(env.Stderr, "error:", err)
 			return 2
 		}
+		env.grouping = cfg.Grouping
 		if cmd == "report" {
-			return report(env, collector.NewLinux(env.Machine))
+			return report(env, cfg, collector.NewLinux(env.Machine))
 		}
 		return run(ctx, env, cfg)
 	case "install", "uninstall":
@@ -100,7 +103,8 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 		fmt.Fprintln(env.Stderr, "warning: could not exempt own process from the OOM killer:", st.OOMError)
 	}
 	col := collector.NewLinux(env.Machine)
-	srv := server.New(cfg.Interval, grouping.Default(env.Machine))
+	srv := server.New(cfg.Interval, newGrouper(env))
+	srv.SetAdvisor(advisor.New(env.Machine, cfg.Advisor, advisor.DefaultRules()))
 	first, _ := col.Collect()
 	srv.Update(first)
 

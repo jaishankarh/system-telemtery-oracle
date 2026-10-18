@@ -41,6 +41,14 @@ type Match struct {
 	// Sub optionally names a sub-group inside the Application, such as the
 	// container within a Pod; it is shown in the drilldown.
 	Sub string
+	// Role optionally names what this Process is for inside its Application,
+	// such as "language-server" or "renderer" (see the Role constants in
+	// profiles.go). Settings Fixes read it to tell an editor's watchers from
+	// its language servers.
+	Role string
+	// Container is set by the Container / Pod layer: the container this
+	// Process runs in, kept so the Application can expose its memory limit.
+	Container *ContainerMember
 }
 
 // Layer recognises the Processes it can name. Match must be deterministic for
@@ -84,6 +92,7 @@ func (c *Context) Ancestors(p *collector.Process) []*collector.Process {
 type Member struct {
 	collector.Process
 	Subgroup string `json:"subgroup,omitempty"`
+	Role     string `json:"role,omitempty"`
 }
 
 // Application is a named group of Processes shown as one row. Totals are nil
@@ -102,6 +111,9 @@ type Application struct {
 	Read         *float64 `json:"disk_read_bytes_per_sec"`
 	Write        *float64 `json:"disk_write_bytes_per_sec"`
 	Processes    []Member `json:"processes"` // ascending PID
+	// Container is set for a Container or Pod: how it was started, its
+	// memory limit (nil: none) and, for a Pod, its containers.
+	Container *ContainerInfo `json:"container,omitempty"`
 }
 
 // PSSPlusSwap is the Application's contribution to the Working Set.
@@ -164,8 +176,9 @@ func (g *Grouper) Group(procs []collector.Process) []Application {
 			a = &Application{ID: id, Name: match.Name, Kind: match.Kind}
 			apps[id] = a
 		}
-		a.Processes = append(a.Processes, Member{Process: *p, Subgroup: match.Sub})
+		a.Processes = append(a.Processes, Member{Process: *p, Subgroup: match.Sub, Role: match.Role})
 		appOf[p.PID] = id
+		a.noteContainer(match.Container)
 	}
 	out := make([]Application, 0, len(apps))
 	for id, a := range apps {
@@ -192,6 +205,7 @@ func total(a Application) uint64 {
 func finish(a *Application, id string, appOf map[int]string) {
 	sort.Slice(a.Processes, func(i, j int) bool { return a.Processes[i].PID < a.Processes[j].PID })
 	a.ProcessCount = len(a.Processes)
+	a.finishContainer()
 	a.PIDs = make([]int, 0, len(a.Processes))
 	a.PrimaryPIDs = []int{}
 	for _, m := range a.Processes {

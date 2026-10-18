@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 )
 
 // report samples twice, one second apart so rates exist, and prints a table.
-func report(env Env, col collector.Collector) int {
-	if _, err := col.Collect(); err != nil {
+func report(env Env, cfg config.Config, col collector.Collector) int {
+	first, err := col.Collect()
+	if err != nil {
 		fmt.Fprintln(env.Stderr, "error:", err)
 		return 1
 	}
@@ -56,6 +58,7 @@ func report(env Env, col collector.Collector) int {
 	for _, g := range s.GPUs {
 		fmt.Fprintf(w, "GPU  %s (%s)  util %s  temp %s  VRAM %s\n", g.Name, g.Vendor, gpuPct(g.UtilPercent), gpuTemp(g.TempC), gpuVRAM(g.VRAMUsedBytes, g.VRAMTotalBytes))
 	}
+	adviceSection(w, env, cfg, first, s)
 	topApplications(w, env, s)
 	topProcesses(w, s)
 	for _, p := range s.Missing {

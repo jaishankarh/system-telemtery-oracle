@@ -15,6 +15,17 @@ tr.drilldown > td { padding-left: 24px; }
 tr.drilldown table { width: auto; }
 td.cmd-full { white-space: pre-wrap; word-break: break-all; }
 #app-filter-error { color: #b00; margin-left: 8px; }
+
+#advice article.advice { border-left: 4px solid #888; padding: 4px 10px; margin-bottom: 8px; }
+#advice .sev-critical { border-color: #c00; }
+#advice .sev-warning { border-color: #d80; }
+#advice .sev-info { border-color: #28c; }
+#advice .badge { text-transform: uppercase; font-size: 12px; padding: 1px 6px; border-radius: 3px; background: rgba(128,128,128,.25); }
+#advice h3 { margin: 4px 0; font-size: 15px; }
+#advice p { margin: 2px 0; }
+#advice pre.change { background: rgba(128,128,128,.15); padding: 6px; overflow-x: auto; }
+#advice-disabled { color: #777; margin: 4px 0; padding-left: 18px; }
+#advice-pending { color: #777; }
 #graph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
 .chart h3 { margin: 0 0 2px; font-size: 13px; }
 .chart small { font-weight: normal; opacity: .7; }

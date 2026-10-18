@@ -15,16 +15,17 @@ U = "/user.slice/user-1000.slice"
 UM = U + "/user@1000.service"
 SESS = U + "/session-3.scope"
 VTE = UM + "/app.slice/vte-spawn-1b2c.scope"
+# Programs here are deliberately not App Profiles: they stand for programs the tool has never heard of.
 # pid, ppid, comm, argv, cgroup, cwd, uid, rss, pss, swap (kB)
 P = [
  (1, 0, "systemd", ["/sbin/init", "splash"], "/init.scope", "/", 0, 12000, 9000, 0),
  (2, 0, "kthreadd", None, "/", "/", 0, None, None, None),
  (3, 2, "kworker/0:0", None, "/", "/", 0, None, None, None),
  (50, 1, "systemd", ["/lib/systemd/systemd", "--user"], UM + "/init.scope", "/", 1000, 9000, 6000, 0),
- (100, 50, "code", ["/usr/share/code/code", "--type=extensionHost"], UM + "/app.slice/app-gnome-code-4242.scope", "/home/dev/my proj", 1000, 800000, 500000, 120000),
- (101, 100, "node", ["node", "/usr/share/code/tsserver.js"], UM + "/app.slice/app-gnome-code-4242.scope", "/home/dev/my proj", 1000, 300000, 200000, 0),
- (200, 50, "firefox", ["/usr/lib/firefox/firefox"], UM + "/app.slice/app-flatpak-org.mozilla.firefox-777.scope", "/home/dev", 1000, 400000, 300000, 100000),
- (201, 200, "Web Content", ["/usr/lib/firefox/firefox", "-contentproc", "-childID", "1"], UM + "/app.slice/app-flatpak-org.mozilla.firefox-777.scope", "/home/dev", 1000, 600000, 350000, 900000),
+ (100, 50, "code", ["/opt/acme-ide/acme-ide", "--type=extensionHost"], UM + "/app.slice/app-gnome-code-4242.scope", "/home/dev/my proj", 1000, 800000, 500000, 120000),
+ (101, 100, "node", ["node", "/opt/acme-ide/server.js"], UM + "/app.slice/app-gnome-code-4242.scope", "/home/dev/my proj", 1000, 300000, 200000, 0),
+ (200, 50, "firefox", ["/opt/acme-browser/browser"], UM + "/app.slice/app-flatpak-org.mozilla.firefox-777.scope", "/home/dev", 1000, 400000, 300000, 100000),
+ (201, 200, "Web Content", ["/opt/acme-browser/browser", "--content", "1"], UM + "/app.slice/app-flatpak-org.mozilla.firefox-777.scope", "/home/dev", 1000, 600000, 350000, 900000),
  (410, 50, "gnome-terminal-", ["/usr/libexec/gnome-terminal-server"], UM + "/app.slice/app-gnome-org.gnome.Terminal-900.scope", "/home/dev", 1000, 50000, 30000, 0),
  (400, 410, "bash", ["bash"], VTE, "/home/dev/my proj", 1000, 6000, 3000, 0),
  (300, 400, "node (dev)", ["node", "server.js"], VTE, "/home/dev/my proj/api", 1000, 200000, 150000, 0),
