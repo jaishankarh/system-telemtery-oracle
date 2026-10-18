@@ -307,6 +307,7 @@ func (p *Program) GetJSON(path string, v any) {
 // has published a sample taken at the new time (observed via /api/system).
 func (p *Program) Tick() {
 	p.t.Helper()
+	p.m.Clock.waitForTicker()
 	p.m.Clock.Advance(p.Interval)
 	want := p.m.Clock.Now().Format(time.RFC3339Nano)
 	deadline := time.Now().Add(tickDeliveryTimeout)

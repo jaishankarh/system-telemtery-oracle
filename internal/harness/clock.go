@@ -47,6 +47,22 @@ func (c *FakeClock) Sleep(d time.Duration) {
 	}
 }
 
+// waitForTicker blocks until the program has registered a ticker. The program serves its
+// first sample before it creates its ticker, so an Advance issued in that gap would find
+// no ticker, drop the tick, and leave the program waiting for a tick that never comes.
+func (c *FakeClock) waitForTicker() {
+	deadline := time.Now().Add(tickDeliveryTimeout)
+	for time.Now().Before(deadline) {
+		c.mu.Lock()
+		n := len(c.tickers)
+		c.mu.Unlock()
+		if n > 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func (c *FakeClock) NewTicker(d time.Duration) machine.Ticker {
 	t := &fakeTicker{ch: make(chan time.Time), stop: make(chan struct{})}
 	c.mu.Lock()
