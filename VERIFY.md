@@ -55,3 +55,28 @@ Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build
 - [ ] Sorting: `?sort=cpu_percent&order=desc` and `?sort=name&order=asc` reorder rows; `?sort=nope` is HTTP 400; `?filter=firefox|chrome` narrows to matching Applications
 - [ ] Dashboard at http://127.0.0.1:9191: the Applications table is the first view and sorted by PSS + swap; clicking a header sorts (arrow shows direction); clicking a row expands its Processes with PID, user, PSS, swap, working directory and the full command line; the expansion survives the 2s refresh
 - [ ] Launch a program the tool has never heard of (for example a snap or Flatpak app, or `systemd-run --user --scope sleep 600`) and see it appear as its own Application without any config
+
+## Ticket 5: Containers and Pods
+
+Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run --port 8080`
+
+- [ ] Start a container: `docker run -d --name memtest --memory 256m alpine sleep 1000`. `curl -s localhost:8080/api/applications?filter=memtest | jq '.applications[] | {name,kind,container}'` shows kind "container", name "memtest", started_by "docker run", memory_limit_bytes 268435456.
+- [ ] Start one without a limit (`docker run -d --name nolimit alpine sleep 1000`): memory_limit_bytes is null.
+- [ ] If you use Compose: a compose container shows started_by "compose".
+- [ ] If containerd/nerdctl or k3s is installed: its containers show runtime "containerd"; k3s pods show kind "pod" named by pod name, with `.container.containers[]` listing each container and each process's `subgroup` naming its container.
+- [ ] kind: the kind node appears as one Docker Container (e.g. kind-control-plane); pods inside it are not split out (known limitation).
+- [ ] With Docker stopped (`sudo systemctl stop docker docker.socket`) the program keeps running and the container rows disappear without errors.
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` lists the containers in the Applications table.
+
+## Ticket 8: Live graphs and SSE
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
+- [ ] `curl -s 127.0.0.1:9191/api/system | python3 -m json.tool | grep -A12 '"pressure"'` shows cpu/memory/io `some_percent`/`full_percent` (null only on the first sample); `"disks"` lists whole devices (nvme0n1, sda; no partitions, loop, zram). `missing` lists `/proc/pressure` only if your kernel lacks PSI
+- [ ] Idle cost: before opening a browser, `curl -s 127.0.0.1:9191/api/live/stats` shows `"clients":0,"stream_encodes":0`, and stays 0 after 30s
+- [ ] After ~1 minute, `curl -s 127.0.0.1:9191/api/live | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["points"]), d["window_seconds"])'` prints about 30 points (at 2s) and 300; after 6+ minutes it stays at ~150 points
+- [ ] Open http://127.0.0.1:9191: the Graphs section shows CPU, RAM vs swap, Memory pressure, I/O pressure, Disk throughput, Swap-in/out, and the Top 10 Applications RAM/swap bars. On open the charts already show the last 5 minutes; all move every ~2s. Charts for data your kernel lacks (for example no PSI) are hidden
+- [ ] Generate load: `stress-ng --vm 2 --vm-bytes 90% --timeout 60s` (RAM and swap lines rise, memory pressure and swap-in/out rise); `dd if=/dev/zero of=/tmp/x bs=1M count=3000 oflag=direct` (disk write throughput rises); `yes >/dev/null` (CPU rises). Values agree with `vmstat 1` / `iostat -x 1` / `cat /proc/pressure/memory`
+- [ ] While the page is open `curl -s 127.0.0.1:9191/api/live/stats` shows `clients` 1 and `stream_encodes` rising by 1 per sample. `curl -N 127.0.0.1:9191/api/live/stream` prints a `data: {...}` line every 2s
+- [ ] Close the tab (or switch to another tab: streaming pauses while hidden): `clients` returns to 0 and `stream_encodes` stops rising; reopening resumes it and the graph backfills the gap
+- [ ] Works offline: disconnect the network, reload; charts still draw (uPlot is embedded)
+- [ ] Narrow the window to half a laptop screen: charts reflow to one column without horizontal page scroll
