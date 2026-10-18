@@ -6,6 +6,7 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
 // Rule is one kind of Advice. To add a rule: implement Rule, add it to
@@ -38,15 +39,18 @@ type Finding struct {
 
 // Input is everything a rule may look at in one observation.
 type Input struct {
-	Now    time.Time
-	Window time.Duration
-	Cfg    config.Advisor
-	Sample collector.Sample
-	Apps   []grouping.Application // ordered by Working Set contribution, largest first
+	Now     time.Time
+	Machine machine.Machine // for rules that look at the Project on disk (read only)
+	Window  time.Duration
+	Cfg     config.Advisor
+	Sample  collector.Sample
+	Apps    []grouping.Application // ordered by Working Set contribution, largest first
 	// PSI is nil when /proc/pressure/memory is missing; PSIReason says why.
 	PSI       *PSI
 	PSIReason string
 	Swap      SwapActivity
+	// Swappiness is vm.swappiness; nil when /proc/sys/vm/swappiness is unreadable.
+	Swappiness *int
 }
 
 // WorkingSet is the sum over Applications of PSS + swap. ok is false when no
@@ -81,7 +85,7 @@ func (in *Input) TopApps(n int) []AppRef {
 
 // DefaultRules lists every rule. Tickets #13-#17 add theirs here.
 func DefaultRules() []Rule {
-	return []Rule{HardwareLimitRule{}}
+	return []Rule{HardwareLimitRule{}, SwappinessRule{}, CompressedSwapThrashingRule{}, SwapWearRule{}, EditorWatcherRule{}, BrowserSprawlRule{}}
 }
 
 func fnum(name string, v float64, unit string) Fact { return Fact{Name: name, Value: &v, Unit: unit} }

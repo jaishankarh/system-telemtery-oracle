@@ -34,6 +34,21 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] Dashboard Advice panel shows the text in a box with a Copy button; pasting it gives only the file content.
 - [ ] After all of this: `ls /etc/sysctl.d/99-swappiness.conf /etc/sysctl.d/99-zram-swap.conf /etc/systemd/zram-generator.conf` shows files you did not create do not exist, and `cat /proc/sys/vm/swappiness` is unchanged.
 
+## Ticket 16: Editor file-watcher and browser process sprawl Settings Fixes
+
+Thresholds (fixed in code, window is `advisor_window`, default 5 min): editor rule fires when file-watcher + ripgrep + language-server processes of one Cursor / VS Code / VSCodium / Windsurf together use >= 50% of one core or >= 2 GB PSS. Browser rule fires at >= 8 renderer processes totalling >= 3 GB PSS. To test quickly, add `advisor_window = "30s"` to `/etc/sys-telemetry-app/config.toml`.
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
+- [ ] Editor: open a large git repository in Cursor (or VS Code / Windsurf) with a big `node_modules` and no `files.watcherExclude`; run a project-wide search or a TypeScript/Rust language server indexing so the watcher/ripgrep/language server burn CPU. Check roles with `curl -s localhost:9191/api/applications | jq '.applications[] | select(.name=="Cursor") | .processes[] | {pid, role, cpu_percent, pss_bytes}'`
+- [ ] After the window: `curl -s localhost:9191/api/advice | jq '.advice[] | select(.rule=="editor-file-watcher")'` shows category `settings_fix`, the editor in `applications`, evidence facts, and a `change` whose `target` is `<your repo>/.vscode/settings.json` and `content` is JSON with `files.watcherExclude` and `search.exclude` (node_modules, dist, build, .cache, plus extras like .next / target only if they exist in the repo). The summary names the repo folder as the Project.
+- [ ] Paste the content into that settings.json (merging keys), reload the window: watcher/ripgrep CPU drops and the Advice ends after the editor is quiet.
+- [ ] `sudo ls <repo>/.vscode` before you paste anything: the tool created no file (advice only).
+- [ ] Browser: open 15+ tabs in Chrome/Chromium/Brave/Edge/Firefox so renderers total > 3 GB. `curl -s localhost:9191/api/advice | jq '.advice[] | select(.rule=="browser-process-sprawl") | {summary, change}'` names that browser and gives its own settings: Chrome `chrome://settings/performance` Memory Saver, Brave `brave://settings/system`, Edge `edge://settings/system` sleeping tabs, Chromium the `#high-efficiency-mode-available` flag, Firefox `dom.ipc.processCount`. The text labels each item as a preference or a flag (`--renderer-process-limit=N` is a command-line flag).
+- [ ] Check the named setting really exists in your browser version at the named place (the Memory Saver location moves between releases).
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` shows the same Advice with the change and its Note.
+- [ ] Dashboard Advice panel shows the change in a copyable block and the note under it.
+- [ ] With quiet editors and few tabs, neither rule shows up (and neither appears under "Disabled").
+
 ## Ticket 17: Hide and Snooze Advice
 
 Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run` (a config with `advisor_window = "30s"` and `snooze_presets = "1m, 1d, 7d"` makes this quicker).
@@ -158,25 +173,28 @@ Run as root on the Ubuntu laptop. Start the binary: `sudo ./dist/sys-telemetry-a
 
 ## Ticket 9: GPU metrics
 
-AMD/Intel are read from sysfs; NVIDIA is read through NVML (libnvidia-ml.so.1) loaded at runtime by a vendored dlopen. NVML could not be exercised in development (only against a stub library), so the NVIDIA checks below matter most.
+AMD/Intel GPUs are read from sysfs in the default (static) binary. NVIDIA needs the separate nvml build, which loads libnvidia-ml.so.1 at runtime; it could only be tested against a stub library, so the NVIDIA checks matter most.
 
-Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
+Static default build:
+- [ ] `make build` prints "static OK" for both binaries; `ldd ./dist/sys-telemetry-app-linux-amd64` says "not a dynamic executable"; `file` says "statically linked"
+- [ ] On the NVIDIA laptop with the default binary: `sudo ./dist/sys-telemetry-app-linux-amd64 report` ends with "Unavailable on this machine" listing "NVIDIA GPU: NVIDIA GPU data needs the nvml build ..." and no NVIDIA GPU line; `curl -s 127.0.0.1:9191/api/system | python3 -m json.tool | grep -B1 -A3 nvidia_gpu` shows the same item
 
-NVIDIA (RTX 3060 laptop, proprietary driver installed):
+NVIDIA (RTX 3060 laptop, proprietary driver installed), with the nvml build:
+- [ ] `make build-nvml` succeeds; run THIS binary as root: `sudo ./dist/sys-telemetry-app-nvml-linux-amd64 run --port 9191` (expected: `ldd` shows libc/libdl/libpthread; that is fine for this variant)
 - [ ] The driver is loaded: `ls /dev/nvidiactl /proc/driver/nvidia` both exist, and `ls /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1` (or `ldconfig -p | grep nvidia-ml`) exists
-- [ ] `readelf -d ./dist/sys-telemetry-app-linux-amd64 | grep NEEDED` lists libdl/libpthread/libc (expected: the binary is dynamic, see ADR 0002 addendum)
 - [ ] `curl -s 127.0.0.1:9191/api/system | python3 -m json.tool | grep -B2 -A12 '"gpus"'` shows an entry with vendor "nvidia", name containing "RTX 3060", util_percent, temperature_celsius, vram_used_bytes and vram_total_bytes (about 6 GiB on a laptop 3060, 12 GiB desktop)
 - [ ] Compare with `nvidia-smi --query-gpu=name,utilization.gpu,temperature.gpu,memory.used,memory.total --format=csv` (run it only to compare): temperature within 1-2 C, VRAM used within a few MiB (nvidia-smi MiB x 1048576 = bytes), utilisation similar
 - [ ] Generate load (a game, `glxgears -fullscreen`, or `python3 -c 'import torch;...'`): util_percent and temperature rise within a few seconds; VRAM used rises when a GPU program starts
-- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` has a line `GPU  NVIDIA GeForce RTX 3060 (nvidia)  util N%  temp N C  VRAM x GiB of y GiB`
+- [ ] `sudo ./dist/sys-telemetry-app-nvml-linux-amd64 report` has a line `GPU  NVIDIA GeForce RTX 3060 (nvidia)  util N%  temp N C  VRAM x GiB of y GiB`
 - [ ] Dashboard at http://127.0.0.1:9191: a "GPU" section under Swap, and in Graphs a "GPU" chart (utilisation and temperature) and a "GPU memory (VRAM)" chart that move every ~2s
 - [ ] `curl -s 127.0.0.1:9191/api/live | python3 -c 'import json,sys; p=json.load(sys.stdin)["points"][-1]; print({k:v for k,v in p.items() if k.startswith("gpu")})'` prints the four gpu_* values
 - [ ] Hybrid laptop: if the GPU is runtime-suspended (`cat /sys/bus/pci/devices/*/power/runtime_status`), reading may wake it; note whether this is a problem (battery). If it is, tell me
 - [ ] Stability: leave it running 10 minutes under `watch -n1 nvidia-smi` in another terminal; the program keeps sampling (`/api/system` time advances) and `ps -o rss= -p $(pgrep sys-telemetry)` stays under 30000 (KiB)
-- [ ] Failure is quiet: `sudo rmmod nvidia_uvm` is not needed; instead `sudo mv /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /tmp/` and restart: no crash, no `gpus` key, no errors on stderr (move it back afterwards)
+- [ ] Failure is quiet: `sudo rmmod nvidia_uvm` is not needed; instead `sudo mv /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /tmp/` and restart the nvml binary: no crash, no `gpus` key, and "NVIDIA GPU: NVIDIA GPU data could not be read: ..." under Unavailable (move it back afterwards)
 
 AMD / Intel (only if you have such a machine or an iGPU):
 - [ ] `ls /sys/class/drm/card*/device/vendor` and `cat` them: 0x1002 is AMD, 0x8086 is Intel. `gpus` in /api/system lists those (Intel iGPUs usually have only a temperature or nothing; AMD shows util from gpu_busy_percent and VRAM from mem_info_vram_*)
 
 No GPU / no driver:
 - [ ] On a machine without a GPU (a VM or server): the binary starts, `/api/system` has no `gpus` key, the dashboard has no GPU section or charts, `report` has no GPU line, stderr has no GPU errors
+- [ ] `SYS_TELEMETRY_VARIANT=nvml` with install.sh (after a release) installs the nvml build; without it the static one

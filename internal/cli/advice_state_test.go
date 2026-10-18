@@ -27,6 +27,16 @@ type stateAdvice struct {
 func getState(p *harness.Program) stateAdvice {
 	var d stateAdvice
 	p.GetJSON("/api/advice", &d)
+	// These tests are about hiding and snoozing the Hardware Limit. Heavy Disk Swap
+	// writes also raise swap-wear Advice after a few simulated minutes, so look at
+	// the Hardware Limit only.
+	kept := d.Advice[:0]
+	for _, a := range d.Advice {
+		if a.Rule == "hardware-limit" {
+			kept = append(kept, a)
+		}
+	}
+	d.Advice = kept
 	return d
 }
 

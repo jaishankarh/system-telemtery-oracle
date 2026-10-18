@@ -19,13 +19,14 @@ type Advisor struct {
 	cfg   config.Advisor
 	rules []Rule
 
-	mu       sync.Mutex
-	swap     swapTracker
-	tracks   map[string]*track
-	disabled []Disabled
-	now      time.Time
-	events   []Event
-	sink     func(Event)
+	mu         sync.Mutex
+	swap       swapTracker
+	diskWrites diskWriteHistory
+	tracks     map[string]*track
+	disabled   []Disabled
+	now        time.Time
+	events     []Event
+	sink       func(Event)
 
 	marked   map[string]Marked // Hidden and Snoozed Advice by ID (state.go)
 	writable bool
@@ -64,10 +65,13 @@ func (a *Advisor) Observe(s collector.Sample, apps []grouping.Application) {
 	defer a.mu.Unlock()
 	now := s.Time
 	a.now = now
-	in := &Input{Now: now, Window: a.cfg.Window, Cfg: a.cfg, Sample: s, Apps: apps}
+	in := &Input{Now: now, Machine: a.m, Window: a.cfg.Window, Cfg: a.cfg, Sample: s, Apps: apps}
 	in.PSI, in.PSIReason = readPSI(a.m)
+	in.Swappiness = readSwappiness(a.m)
 	in.Swap = a.swap.observe(a.m, now, s.Swap.Disk != nil, s.Swap.Compressed != nil,
 		s.Swap.ZswapEnabled != nil && *s.Swap.ZswapEnabled)
+	a.diskWrites.add(now, in.Swap.Disk.Out)
+	in.Swap.DiskWriteBytesPerDay, in.Swap.DiskWriteObserved = a.diskWrites.estimate()
 
 	seen := map[string]bool{}
 	a.disabled = a.disabled[:0]
