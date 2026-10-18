@@ -68,6 +68,28 @@ Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 
 - [ ] With Docker stopped (`sudo systemctl stop docker docker.socket`) the program keeps running and the container rows disappear without errors.
 - [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` lists the containers in the Applications table.
 
+## Ticket 7: Dev & Build per Project and user grouping rules
+
+Run as root on the Ubuntu laptop. Start the binary: `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`.
+
+- [ ] In Cursor (or VS Code), open a project that is a git repository, open the built-in terminal and run `npm run dev` (or any dev server).
+- [ ] `curl -s localhost:9191/api/applications | jq '.applications[] | {name, kind, pids}'` shows `Dev & Build: <repo folder name>` with kind `devbuild`, containing the npm/node dev server processes, and the Cursor row no longer contains them.
+- [ ] Cursor's own language servers (tsserver, extension host) are still in the Cursor row (not in Dev & Build).
+- [ ] Start a second build in another repository (for example `cargo build` or `make`): a second `Dev & Build: <other repo>` row appears.
+- [ ] A build run in a directory with no VCS root appears as `Dev & Build: <that directory name>`.
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` lists the same Dev & Build rows under Applications.
+- [ ] Create `/etc/sys-telemetry-app/config.toml` with:
+  ```
+  [[group]]
+  name = "My terminal"
+  executable = "gnome-terminal-server"
+
+  [[rename]]
+  from = "Dev & Build: <repo folder name>"
+  to = "My dev server"
+  ```
+  Restart: an Application "My terminal" holds the terminal server, and the renamed row shows the new name. A typo in the file (unknown key, bad regex) makes the binary exit with a line-numbered error.
+
 ## Ticket 8: Live graphs and SSE
 
 - [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
