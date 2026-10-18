@@ -216,7 +216,29 @@ type Program struct {
 	once    sync.Once
 	// Interval used to advance the clock on Tick.
 	Interval time.Duration
+	errs     lockedBuffer
 }
+
+// lockedBuffer is a bytes.Buffer safe for the program to write while a test reads.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// Stderr is everything the program has written to standard error so far.
+func (p *Program) Stderr() string { return p.errs.String() }
 
 // Start runs `run` in the background on port 0 (override with --port) and
 // waits until it is listening. Pass flags such as "--interval", "2s".
@@ -227,7 +249,7 @@ func (m *Machine) Start(args ...string) *Program {
 	p := &Program{t: m.t, m: m, cancel: cancel, done: make(chan int, 1), Interval: 2 * time.Second}
 	full := append([]string{"run", "--port", "0"}, args...)
 	go func() {
-		p.done <- cli.Run(ctx, cli.Env{Machine: m.machine(), Stdout: io.Discard, Stderr: io.Discard,
+		p.done <- cli.Run(ctx, cli.Env{Machine: m.machine(), Stdout: io.Discard, Stderr: &p.errs,
 			OnListen:   func(a string) { ready <- a },
 			OnRecorder: func(e history.EventAppender) { p.history.Store(&e) }}, full)
 	}()

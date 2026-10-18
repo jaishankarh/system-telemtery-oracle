@@ -128,7 +128,9 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 	}
 	hs := &http.Server{Handler: withSelf(guard, withHistory(rec.Recorder, srv.Handler())), ReadHeaderTimeout: 5 * time.Second}
 	go hs.Serve(ln)
-	defer announceInstance(env, ctx, ln.Addr().String())()
+	if !rec.otherInstance {
+		defer announceInstance(env, ctx, ln.Addr().String())()
+	}
 	fmt.Fprintf(env.Stderr, "sys-telemetry-app listening on http://%s\n", ln.Addr())
 	if env.OnListen != nil {
 		env.OnListen(ln.Addr().String())

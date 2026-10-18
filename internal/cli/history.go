@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -161,6 +162,10 @@ func askInstance(env Env, q history.Query) (history.Result, bool) {
 func startHistory(env Env, ctx context.Context, g *grouping.Grouper, first collector.Sample) *killableRecorder {
 	rec, err := history.Open(env.Machine, g)
 	if err != nil {
+		if errors.Is(err, history.ErrLocked) {
+			fmt.Fprintln(env.Stderr, "warning: History disabled in this instance:", err, "- this one runs without History and does not announce itself to replay")
+			return &killableRecorder{ctx: ctx, otherInstance: true}
+		}
 		fmt.Fprintln(env.Stderr, "warning: History disabled:", err)
 		return &killableRecorder{ctx: ctx}
 	}
@@ -181,6 +186,8 @@ func startHistory(env Env, ctx context.Context, g *grouping.Grouper, first colle
 type killableRecorder struct {
 	*history.Recorder
 	ctx context.Context
+	// otherInstance: another running instance owns History and instance.addr.
+	otherInstance bool
 }
 
 // Close ends the session cleanly, unless the process was "killed".

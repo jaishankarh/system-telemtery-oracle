@@ -64,12 +64,27 @@ type Recorder struct {
 	prevUnclean bool
 	prevEndedAt time.Time
 	closed      bool
+	lock        *os.File // flock on the state dir while this instance owns History
 }
 
 // Open opens or creates the ring file in the Machine state dir, detects an
 // unclean previous shutdown and starts a new session.
 func Open(m machine.Machine, g *grouping.Grouper) (*Recorder, error) {
 	path := Path(m.StateDir)
+	lock, err := lockState(m.StateDir)
+	if err != nil {
+		return nil, err
+	}
+	r, err := open(m, g, path)
+	if err != nil {
+		lock.Close()
+		return nil, err
+	}
+	r.lock = lock
+	return r, nil
+}
+
+func open(m machine.Machine, g *grouping.Grouper, path string) (*Recorder, error) {
 	r := &Recorder{m: m, grouper: g, dirty: map[int64][]byte{}, gate: make(chan struct{}, 1)}
 	now := m.Clock.Now()
 	h := header{Session: 1, State: stateRunning, StartedNs: now.UnixNano()}
@@ -236,6 +251,7 @@ func (r *Recorder) Close() {
 	r.hdr.State = stateClean
 	r.writeHeader()
 	r.f.Close()
+	r.lock.Close()
 	r.closed = true
 }
 
@@ -249,6 +265,7 @@ func (r *Recorder) Abandon() {
 	defer r.mu.Unlock()
 	r.closed = true
 	r.f.Close()
+	r.lock.Close()
 }
 
 // readPressure reads memory PSI avg10; nil when the kernel has no PSI.

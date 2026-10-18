@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -180,4 +181,32 @@ func TestReplayWithoutHistoryAndWithUnwritableStateDir(t *testing.T) {
 	m.WriteFile("/state", "not a directory") // History cannot be created
 	p := m.Start()
 	p.Tick() // still runs
+}
+
+func TestASecondInstanceOnTheSameStateDirRunsWithoutHistoryAndLeavesTheFirstAlone(t *testing.T) {
+	m := harness.New(t, histFx)
+	first := m.Start()
+	historyTicks(first, 5)
+	addrBefore := m.ReadFile("state/" + history.InstanceFile)
+
+	second := m.Start()
+	if !strings.Contains(second.Stderr(), "History") || !strings.Contains(second.Stderr(), "another") {
+		t.Fatalf("second instance should say another instance owns History, stderr:\n%s", second.Stderr())
+	}
+	if code, _ := second.Get("/api/system"); code != 200 {
+		t.Fatalf("second instance should still serve the dashboard, got %d", code)
+	}
+	if code, _ := second.Get("/api/history/span"); code != http.StatusServiceUnavailable {
+		t.Fatalf("second instance has no History, got %d", code)
+	}
+	second.Stop()
+	if got := m.ReadFile("state/" + history.InstanceFile); got != addrBefore || got != first.Addr {
+		t.Fatalf("instance.addr = %q, want the first instance's %q", got, first.Addr)
+	}
+	historyTicks(first, 2)
+	var s struct{ Newest time.Time }
+	first.GetJSON("/api/history/span", &s)
+	if s.Newest.IsZero() {
+		t.Fatal("first instance lost its History")
+	}
 }
