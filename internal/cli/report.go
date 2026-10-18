@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 )
 
 // report samples twice, one second apart so rates exist, and prints a table.
-func report(env Env, col collector.Collector) int {
-	if _, err := col.Collect(); err != nil {
+func report(env Env, cfg config.Config, col collector.Collector) int {
+	first, err := col.Collect()
+	if err != nil {
 		fmt.Fprintln(env.Stderr, "error:", err)
 		return 1
 	}
@@ -53,6 +55,7 @@ func report(env Env, col collector.Collector) int {
 	} else {
 		fmt.Fprintln(w, "Swap-in/out rates unavailable")
 	}
+	adviceSection(w, env, cfg, first, s)
 	topApplications(w, env, s)
 	topProcesses(w, s)
 	unavailableSection(w, s)
@@ -125,7 +128,7 @@ func oneLine(s string) string {
 }
 
 // unavailableSection lists the data this machine cannot provide, with the
-// reason, and the Advice rules that are disabled because of it (ADR 0006).
+// reason, (ADR 0006). Disabled Advice rules are listed by the Advice section.
 func unavailableSection(w io.Writer, s collector.Sample) {
 	a := s.Availability
 	if len(a.Unavailable) == 0 {
@@ -134,8 +137,5 @@ func unavailableSection(w io.Writer, s collector.Sample) {
 	fmt.Fprintf(w, "\nUnavailable on this machine\n")
 	for _, u := range a.Unavailable {
 		fmt.Fprintf(w, "  %s: %s\n", u.Feature, u.Reason)
-	}
-	for _, r := range a.DisabledRules {
-		fmt.Fprintf(w, "  Advice %q: %s\n", r.Rule, r.Reason)
 	}
 }

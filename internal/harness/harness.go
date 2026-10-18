@@ -51,6 +51,13 @@
 // OldKernelWithoutSmapsRollup() take one away. Assert on /api/availability and the `report` section
 // "Unavailable on this machine".
 //
+// Fixture "dev-box-profiles" (regenerate with scripts/gen-profiles-fixture.py)
+// is a desktop running every built-in App Profile: Cursor, VS Code and
+// Windsurf with extension hosts, language servers, ripgrep and a terminal;
+// Android Studio and IntelliJ IDEA with their daemons; Chrome, Chromium, Brave,
+// Edge and Firefox with renderers; a standalone Gradle daemon; the Android
+// emulator. Application members carry a "role" there.
+//
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
 // container sockets, fake GPU reader) as new fields on Machine.
@@ -269,4 +276,10 @@ func (p *Program) Tick() {
 		time.Sleep(2 * time.Millisecond)
 	}
 	p.t.Fatal("program did not take a sample after Tick")
+}
+
+// tryRead returns a file's content or an error (ReadFile fails the test instead).
+func (m *Machine) tryRead(path string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(m.Root, path))
+	return string(b), err
 }

@@ -25,11 +25,7 @@ type availabilityDoc struct {
 		ContainerRuntimes []string `json:"container_runtimes"`
 		GPUs              []string `json:"gpus"`
 	} `json:"environment"`
-	Unavailable   []availabilityItem `json:"unavailable"`
-	DisabledRules []struct {
-		Rule   string `json:"rule"`
-		Reason string `json:"reason"`
-	} `json:"disabled_rules"`
+	Unavailable []availabilityItem `json:"unavailable"`
 }
 
 func (a availabilityDoc) ids() string {
@@ -39,15 +35,6 @@ func (a availabilityDoc) ids() string {
 	}
 	sort.Strings(ids)
 	return strings.Join(ids, ",")
-}
-
-func (a availabilityDoc) disabled(rule string) string {
-	for _, r := range a.DisabledRules {
-		if r.Rule == rule {
-			return r.Reason
-		}
-	}
-	return ""
 }
 
 type livePoint struct {
@@ -66,6 +53,8 @@ type degradedView struct {
 		} `json:"swap"`
 		Availability availabilityDoc `json:"availability"`
 	}
+	// Disabled maps an Advice rule id to the one-line reason it is disabled (/api/advice).
+	Disabled  map[string]string
 	Apps      []application
 	Processes []appProc
 	Live      []livePoint
@@ -94,6 +83,14 @@ func observe(t *testing.T, m *harness.Machine) degradedView {
 	}
 	p.GetJSON("/api/live", &lv)
 	v.Live = lv.Points
+	var adv struct {
+		Disabled []struct{ Rule, Reason string } `json:"disabled"`
+	}
+	p.GetJSON("/api/advice", &adv)
+	v.Disabled = map[string]string{}
+	for _, d := range adv.Disabled {
+		v.Disabled[d.Rule] = d.Reason
+	}
 	var doc availabilityDoc
 	p.GetJSON("/api/availability", &doc)
 	if doc.ids() != v.System.Availability.ids() {
@@ -130,6 +127,16 @@ func (v degradedView) wantUnavailable(t *testing.T, ids string) {
 	}
 }
 
+// wantHardwareLimitDisabled asserts the Advice panel lists the Hardware Limit
+// rule as disabled, with a one-line reason naming the missing feature.
+func (v degradedView) wantHardwareLimitDisabled(t *testing.T, feature string) {
+	t.Helper()
+	why := v.Disabled["hardware-limit"]
+	if !strings.HasPrefix(why, "needs ") || !strings.Contains(why, feature) || strings.Contains(why, "\n") {
+		t.Fatalf("hardware-limit disabled reason = %q, want a one-line reason naming %q", why, feature)
+	}
+}
+
 func appNames(v degradedView) string {
 	var n []string
 	for _, a := range v.Apps {
@@ -146,8 +153,8 @@ func TestModernMachineHasNothingUnavailable(t *testing.T) {
 	if a.Environment.Cgroup != "v2" || !a.Environment.Systemd || len(a.Environment.ContainerRuntimes) == 0 || len(a.Environment.GPUs) == 0 {
 		t.Fatalf("environment = %+v", a.Environment)
 	}
-	if len(a.DisabledRules) != 0 || v.System.Pressure == nil {
-		t.Fatalf("disabled rules %v, pressure %v", a.DisabledRules, v.System.Pressure)
+	if len(v.Disabled) != 0 || v.System.Pressure == nil {
+		t.Fatalf("disabled rules %v, pressure %v", v.Disabled, v.System.Pressure)
 	}
 }
 
@@ -178,14 +185,8 @@ func TestKernelWithoutPSIHidesPressureAndDisablesHardwareLimit(t *testing.T) {
 			t.Fatal("live points must not carry a pressure value (not zero) without PSI")
 		}
 	}
-	why := v.System.Availability.disabled("Hardware Limit")
-	if !strings.Contains(why, "Pressure stall information (PSI)") || strings.Contains(why, "\n") {
-		t.Fatalf("Hardware Limit reason = %q", why)
-	}
-	if v.System.Availability.disabled("Swap wear") != "" {
-		t.Fatal("Swap wear does not need PSI")
-	}
-	if !strings.Contains(v.Report, "Disabled: needs Pressure stall information (PSI)") {
+	v.wantHardwareLimitDisabled(t, "Pressure stall information (PSI)")
+	if !strings.Contains(v.Report, "needs Pressure stall information (PSI)") {
 		t.Fatalf("report does not list the disabled rule:\n%s", v.Report)
 	}
 }
@@ -209,9 +210,6 @@ func TestNoContainerRuntimeLeavesNoContainerRows(t *testing.T) {
 		if a.Kind == "container" || a.Kind == "pod" {
 			t.Fatalf("Application %q is a %s without a runtime", a.Name, a.Kind)
 		}
-	}
-	if v.System.Availability.disabled("Uncapped container") == "" {
-		t.Fatal("Uncapped container must be disabled without a runtime")
 	}
 }
 
@@ -244,14 +242,7 @@ func TestCompressedSwapOnlyHidesDiskSwap(t *testing.T) {
 	if v.System.Swap.Disk != nil || v.System.Swap.Compressed == nil {
 		t.Fatalf("swap = %+v", v.System.Swap)
 	}
-	for _, rule := range []string{"Hardware Limit", "Swap wear", "Swappiness too aggressive"} {
-		if !strings.Contains(v.System.Availability.disabled(rule), "Disk Swap") {
-			t.Fatalf("%s should be disabled for lack of Disk Swap: %q", rule, v.System.Availability.disabled(rule))
-		}
-	}
-	if v.System.Availability.disabled("Compressed Swap thrashing") != "" {
-		t.Fatal("Compressed Swap thrashing works with Compressed Swap only")
-	}
+	v.wantHardwareLimitDisabled(t, "Disk Swap")
 	if !strings.Contains(v.Report, "Disk Swap        none") {
 		t.Fatalf("report:\n%s", v.Report)
 	}
@@ -282,11 +273,7 @@ func TestOldKernelWithoutSmapsRollupHidesPSSButKeepsSwap(t *testing.T) {
 			t.Fatalf("RAM/swap split needs PSS; it must be hidden, got %v", p.TopApps)
 		}
 	}
-	for _, rule := range []string{"Hardware Limit", "Browser process sprawl"} {
-		if !strings.Contains(v.System.Availability.disabled(rule), "Per-process PSS") {
-			t.Fatalf("%s reason = %q", rule, v.System.Availability.disabled(rule))
-		}
-	}
+	v.wantHardwareLimitDisabled(t, "Per-process PSS")
 }
 
 func TestOldMinimalMachineCombinesEveryGap(t *testing.T) {

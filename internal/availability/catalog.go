@@ -17,7 +17,7 @@ func init() {
 		Reason:  "/proc/swaps is not readable",
 		Affects: []string{"Disk Swap and Compressed Swap", "RAM vs swap graph", "Hardware Limit", "Compressed Swap thrashing", "Swappiness too aggressive", "Swap wear"}})
 	Describe("/proc/pressure", Item{ID: "pressure", Feature: "Pressure stall information (PSI)",
-		Reason:  "this kernel has no /proc/pressure (PSI needs Linux 4.20 or newer built with CONFIG_PSI)",
+		Reason:  "/proc/pressure/memory is missing: this kernel has no pressure stall information (PSI needs Linux 4.20 or newer built with CONFIG_PSI)",
 		Affects: []string{"CPU, memory and I/O pressure graphs", "Hardware Limit"}})
 	Describe("/proc/diskstats", Item{ID: "diskstats", Feature: "Disk throughput",
 		Reason: "/proc/diskstats is not readable", Affects: []string{"Disk throughput graph"}})
@@ -35,14 +35,4 @@ func init() {
 	Describe("disk_swap", Item{ID: "disk_swap", Feature: "Disk Swap",
 		Reason:  "no swap partition or swap file is configured on this machine (Compressed Swap only, or no swap at all)",
 		Affects: []string{"Disk Swap rows", "Hardware Limit", "Swap wear", "Swappiness too aggressive"}})
-
-	// Provisional dependencies, so disabled rules can be listed before the
-	// Advisor exists. The Advisor (ticket 12) owns the rule set.
-	NeedRule("Hardware Limit", "meminfo", "pressure", "smaps_rollup", "swap_rates", "swaps", "disk_swap")
-	NeedRule("Compressed Swap thrashing", "swap_rates", "swaps")
-	NeedRule("Swappiness too aggressive", "meminfo", "swaps", "disk_swap")
-	NeedRule("Swap wear", "swap_rates", "swaps", "disk_swap")
-	NeedRule("Uncapped container", "container_runtime", "smaps_rollup")
-	NeedRule("Browser process sprawl", "smaps_rollup")
-	NeedRule("Editor file-watcher load", "cpu")
 }

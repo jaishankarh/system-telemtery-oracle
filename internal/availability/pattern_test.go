@@ -21,7 +21,6 @@ func init() {
 		}
 		return &availability.Item{ID: "fake_device", Feature: "Fake device", Reason: "no fake device found"}
 	})
-	availability.NeedRule("Fake rule", "fake_feature", "fake_device")
 	// A source ticket can also replace a default probe by registering the same id:
 	availability.RegisterProbe("gpu", func(machine.Machine, availability.Environment) *availability.Item { return nil })
 }
@@ -32,7 +31,6 @@ func TestARegisteredSourceIsListedAndDisablesItsRule(t *testing.T) {
 	p := m.Start()
 	var a struct {
 		Unavailable []struct{ ID, Feature, Reason string } `json:"unavailable"`
-		Disabled    []struct{ Rule, Reason string }        `json:"disabled_rules"`
 	}
 	p.GetJSON("/api/availability", &a)
 	var ids []string
@@ -42,8 +40,8 @@ func TestARegisteredSourceIsListedAndDisablesItsRule(t *testing.T) {
 	if got := strings.Join(ids, ","); got != "fake_device" { // the gpu probe was replaced; fake_feature's file is not read
 		t.Fatalf("unavailable = %q", got)
 	}
-	if len(a.Disabled) != 1 || a.Disabled[0].Rule != "Fake rule" ||
-		a.Disabled[0].Reason != "Disabled: needs Fake device (no fake device found)" {
-		t.Fatalf("disabled rules = %+v", a.Disabled)
+	why := availability.DisabledReason([]availability.Item{{ID: "fake_device", Feature: "Fake device", Reason: "no fake device found"}}, "fake_device")
+	if why != "needs Fake device (no fake device found)" {
+		t.Fatalf("reason = %q", why)
 	}
 }

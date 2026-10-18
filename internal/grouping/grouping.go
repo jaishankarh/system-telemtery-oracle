@@ -41,6 +41,11 @@ type Match struct {
 	// Sub optionally names a sub-group inside the Application, such as the
 	// container within a Pod; it is shown in the drilldown.
 	Sub string
+	// Role optionally names what this Process is for inside its Application,
+	// such as "language-server" or "renderer" (see the Role constants in
+	// profiles.go). Settings Fixes read it to tell an editor's watchers from
+	// its language servers.
+	Role string
 	// Container is set by the Container / Pod layer: the container this
 	// Process runs in, kept so the Application can expose its memory limit.
 	Container *ContainerMember
@@ -87,6 +92,7 @@ func (c *Context) Ancestors(p *collector.Process) []*collector.Process {
 type Member struct {
 	collector.Process
 	Subgroup string `json:"subgroup,omitempty"`
+	Role     string `json:"role,omitempty"`
 }
 
 // Application is a named group of Processes shown as one row. Totals are nil
@@ -170,7 +176,7 @@ func (g *Grouper) Group(procs []collector.Process) []Application {
 			a = &Application{ID: id, Name: match.Name, Kind: match.Kind}
 			apps[id] = a
 		}
-		a.Processes = append(a.Processes, Member{Process: *p, Subgroup: match.Sub})
+		a.Processes = append(a.Processes, Member{Process: *p, Subgroup: match.Sub, Role: match.Role})
 		appOf[p.PID] = id
 		a.noteContainer(match.Container)
 	}

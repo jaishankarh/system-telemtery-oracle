@@ -1,0 +1,7 @@
+Name:	java
+Tgid:	400
+Pid:	400
+Uid:	1000	1000	1000	1000
+VmRSS:	1100000 kB
+VmSwap:	100000 kB
+Threads:	4

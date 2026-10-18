@@ -18,8 +18,9 @@
 //     Registering an id that already exists replaces the default probe.
 //  4. Let a view hide itself when its field is nil; never print 0 or an error.
 //
-// Advice rules (ticket 12) ask DisabledReason(report.Unavailable, ids...) and,
-// when it returns text, show the rule as disabled with that line.
+// An Advice rule lists the Item IDs it needs and, in its Needs method, returns
+// DisabledReason(in.Sample.Availability.Unavailable, ids...) when that is not
+// empty; the Advisor then lists the rule as disabled with that line.
 package availability
 
 import (
@@ -53,17 +54,10 @@ type Environment struct {
 	GPUs              []string `json:"gpus"`               // sysfs or driver paths found
 }
 
-// DisabledRule is Advice that cannot run because a source it needs is missing.
-type DisabledRule struct {
-	Rule   string `json:"rule"`
-	Reason string `json:"reason"`
-}
-
 // Report is served inside every Sample as "availability".
 type Report struct {
-	Environment   Environment    `json:"environment"`
-	Unavailable   []Item         `json:"unavailable"`
-	DisabledRules []DisabledRule `json:"disabled_rules"`
+	Environment Environment `json:"environment"`
+	Unavailable []Item      `json:"unavailable"`
 }
 
 // Probe returns an Item when its source is absent on m, otherwise nil. env is
@@ -74,7 +68,6 @@ var (
 	mu      sync.RWMutex
 	catalog = map[string]Item{} // key: a Missing path, or an Item ID
 	probes  = map[string]Probe{}
-	rules   = map[string][]string{} // Advice rule -> Item IDs it needs
 )
 
 // Describe registers what is lost when key is missing. key is a path as it
@@ -142,21 +135,11 @@ func Build(m machine.Machine, in Inputs) Report {
 			add(*it)
 		}
 	}
-	r := Report{Environment: env, Unavailable: make([]Item, 0, len(byID)), DisabledRules: []DisabledRule{}}
+	r := Report{Environment: env, Unavailable: make([]Item, 0, len(byID))}
 	for _, it := range byID {
 		r.Unavailable = append(r.Unavailable, it)
 	}
 	sort.Slice(r.Unavailable, func(i, j int) bool { return r.Unavailable[i].ID < r.Unavailable[j].ID })
-	names := make([]string, 0, len(rules))
-	for n := range rules {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		if why := DisabledReason(r.Unavailable, rules[n]...); why != "" {
-			r.DisabledRules = append(r.DisabledRules, DisabledRule{Rule: n, Reason: why})
-		}
-	}
 	return r
 }
 
@@ -176,14 +159,5 @@ func DisabledReason(unavailable []Item, needs ...string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return "Disabled: needs " + strings.Join(parts, "; ")
-}
-
-// NeedRule records which Item IDs an Advice rule needs, so the data layer can
-// list disabled rules before the Advisor exists. The Advisor owns the real
-// rule set and may call this from its own init to keep the list in step.
-func NeedRule(rule string, ids ...string) {
-	mu.Lock()
-	rules[rule] = ids
-	mu.Unlock()
+	return "needs " + strings.Join(parts, "; ")
 }
