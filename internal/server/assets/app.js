@@ -169,13 +169,44 @@ refreshApplications();
 setInterval(refreshApplications, 2000);
 
 // Advice panel: /api/advice is the whole story (Sustained is decided server side).
-// Each item carries data-advice-id, the stable identity Hide/Snooze will key on.
+// Each item carries data-advice-id, the stable identity Hide/Snooze key on.
 function adviceFact(f) {
   if (f.value == null) return `${f.name}: ${f.text}`;
   const avg = f.avg == null ? "" : ` (avg ${f.avg.toFixed(1)})`;
   return `${f.name}: ${f.value.toFixed(1)} ${f.unit || ""}${avg}`;
 }
-function adviceItem(a) {
+async function adviceAction(name, body) {
+  try {
+    const r = await fetch("/api/advice/" + name, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) alert((await r.text()).trim());
+  } catch (e) { alert("could not reach the program"); }
+  refreshAdvice();
+}
+function adviceControls(a, presets) {
+  const c = document.createElement("div");
+  c.className = "advice-controls";
+  const hide = Object.assign(document.createElement("button"), { textContent: "Hide", title: "Hidden until the Severity rises above " + a.severity });
+  hide.onclick = () => adviceAction("hide", { id: a.id });
+  const sel = document.createElement("select");
+  sel.setAttribute("aria-label", "Snooze period");
+  presets.forEach(p => sel.append(Object.assign(document.createElement("option"), { value: p.label, textContent: "Snooze " + p.label })));
+  const sn = Object.assign(document.createElement("button"), { textContent: "Snooze" });
+  sn.onclick = () => adviceAction("snooze", { id: a.id, preset: sel.value });
+  c.append(hide, sel, sn);
+  return c;
+}
+function hiddenItem(h) {
+  const li = document.createElement("li");
+  li.dataset.adviceId = h.id;
+  li.append(h.state === "snoozed"
+    ? `Snoozed until ${new Date(h.until).toLocaleString()}: ${h.title} `
+    : `Hidden (until Severity rises above ${h.severity}): ${h.title} `);
+  const b = Object.assign(document.createElement("button"), { textContent: "Unhide" });
+  b.onclick = () => adviceAction("unhide", { id: h.id });
+  li.append(b);
+  return li;
+}
+function adviceItem(a, presets) {
   const el = document.createElement("article");
   el.className = "advice sev-" + a.severity;
   el.dataset.adviceId = a.id;
@@ -206,6 +237,7 @@ function adviceItem(a) {
     pre.textContent = `# ${a.change.kind}: ${a.change.target}\n${a.change.content}`;
     el.append(pre);
   }
+  el.append(adviceControls(a, presets));
   return el;
 }
 async function refreshAdvice() {
@@ -214,10 +246,12 @@ async function refreshAdvice() {
     if (!r.ok) return;
     const s = await r.json();
     const list = document.getElementById("advice-list");
-    list.replaceChildren(...(s.advice.length ? s.advice.map(adviceItem) : [Object.assign(document.createElement("p"), { textContent: "No active Advice." })]));
+    if (document.activeElement && document.activeElement.tagName === "SELECT" && list.contains(document.activeElement)) return; // keep the open snooze choice
+    list.replaceChildren(...(s.advice.length ? s.advice.map(a => adviceItem(a, s.snooze_presets)) : [Object.assign(document.createElement("p"), { textContent: "No active Advice." })]));
     document.getElementById("advice-pending").textContent = s.pending.length
       ? "Watching (not yet Sustained over " + Math.round(s.window_seconds) + "s): " + s.pending.map(p => `${p.title} (${Math.round(p.seconds_remaining)}s to go)`).join("; ")
       : "";
+    document.getElementById("advice-hidden").replaceChildren(...s.hidden.map(hiddenItem));
     document.getElementById("advice-disabled").replaceChildren(...s.disabled.map(x => Object.assign(document.createElement("li"), { textContent: `Disabled: ${x.title}: ${x.reason}` })));
   } catch (e) { /* the status line already shows a disconnect */ }
 }

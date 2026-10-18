@@ -38,3 +38,5 @@ td.cmd-full { white-space: pre-wrap; word-break: break-all; }
 .split-bar b { background: #d1342f; display: block; }
 .split-num { text-align: right; font-variant-numeric: tabular-nums; }
 #unavailable ul { margin: 0; padding-left: 1.2em; }
+#advice .advice-controls { margin: 4px 0; }
+#advice-hidden { margin: 4px 0; padding-left: 18px; }

@@ -26,6 +26,9 @@ type Advisor struct {
 	now      time.Time
 	events   []Event
 	sink     func(Event)
+
+	marked   map[string]Marked // Hidden and Snoozed Advice by ID (state.go)
+	writable bool
 }
 
 type track struct {
@@ -42,7 +45,9 @@ type track struct {
 
 // New creates an Advisor with the given rules (use DefaultRules).
 func New(m machine.Machine, cfg config.Advisor, rules []Rule) *Advisor {
-	return &Advisor{m: m, cfg: cfg, rules: rules, tracks: map[string]*track{}}
+	a := &Advisor{m: m, cfg: cfg, rules: rules, tracks: map[string]*track{}}
+	a.loadState()
+	return a
 }
 
 // SetEventSink registers a function called (under the Advisor's lock; it must
@@ -101,6 +106,7 @@ func (a *Advisor) Observe(s collector.Sample, apps []grouping.Application) {
 		}
 		delete(a.tracks, id)
 	}
+	a.releaseLocked(a.m.Clock.Now())
 }
 
 // update promotes a track to Advice once the condition held for the window and
@@ -163,8 +169,18 @@ func (a *Advisor) Snapshot() Snapshot {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := Snapshot{Time: a.now, WindowSeconds: a.cfg.Window.Seconds(),
-		Advice: []Advice{}, Pending: []Pending{}, Disabled: append([]Disabled{}, a.disabled...)}
+		Advice: []Advice{}, Pending: []Pending{}, Disabled: append([]Disabled{}, a.disabled...),
+		Hidden: []Marked{}, SnoozePresets: a.presets()}
+	clock := a.m.Clock.Now()
+	for _, mk := range a.markedList() {
+		if !a.visibleAt(mk, clock) {
+			s.Hidden = append(s.Hidden, mk)
+		}
+	}
 	for _, t := range a.tracks {
+		if mk, ok := a.marked[t.id]; ok && t.active != nil && !a.visibleAt(mk, clock) {
+			continue
+		}
 		if t.active != nil {
 			s.Advice = append(s.Advice, *t.active)
 			continue
