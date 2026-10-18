@@ -309,7 +309,7 @@ func (p *Program) Tick() {
 	p.t.Helper()
 	p.m.Clock.Advance(p.Interval)
 	want := p.m.Clock.Now().Format(time.RFC3339Nano)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(tickDeliveryTimeout)
 	for time.Now().Before(deadline) {
 		var s struct {
 			Time time.Time `json:"time"`

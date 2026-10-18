@@ -67,6 +67,11 @@ func (t *fakeTicker) fire(now time.Time) {
 	select {
 	case t.ch <- now:
 	case <-t.stop:
-	case <-time.After(5 * time.Second):
+	case <-time.After(tickDeliveryTimeout):
 	}
 }
+
+// tickDeliveryTimeout is how long Advance waits for the program to receive a tick. It only
+// matters when the program is stuck: a loaded machine can make a History fsync take seconds,
+// and giving up early drops the tick silently, which shows up as a flaky test.
+const tickDeliveryTimeout = 30 * time.Second
