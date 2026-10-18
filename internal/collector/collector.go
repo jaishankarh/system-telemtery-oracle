@@ -20,6 +20,9 @@ type Sample struct {
 	Memory  *Memory   `json:"memory"`
 	Swap    Swap      `json:"swap"`
 	Missing []string  `json:"missing"`
+	// Pressure (PSI) and Disks: see pressure.go. Pressure is nil without /proc/pressure.
+	Pressure *Pressure `json:"pressure"`
+	Disks    []Disk    `json:"disks"`
 
 	// Processes is served by /api/processes, not inside /api/system.
 	Processes []Process `json:"-"`

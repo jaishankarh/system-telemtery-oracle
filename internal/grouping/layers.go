@@ -14,6 +14,7 @@ package grouping
 // Other is not a layer: the Grouper puts there whatever no layer names.
 func DefaultLayers() []Layer {
 	return []Layer{
+		&ContainerPod{},
 		KernelThreads{},
 		CgroupUnit{},
 		TopAncestor{},
