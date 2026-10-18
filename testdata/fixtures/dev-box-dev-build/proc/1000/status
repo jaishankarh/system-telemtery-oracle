@@ -1,0 +1,7 @@
+Name:	cursor
+Tgid:	1000
+Pid:	1000
+Uid:	1000	1000	1000	1000
+VmRSS:	900000 kB
+VmSwap:	50000 kB
+Threads:	4

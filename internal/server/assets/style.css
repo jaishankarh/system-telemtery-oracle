@@ -15,3 +15,14 @@ tr.drilldown > td { padding-left: 24px; }
 tr.drilldown table { width: auto; }
 td.cmd-full { white-space: pre-wrap; word-break: break-all; }
 #app-filter-error { color: #b00; margin-left: 8px; }
+#graph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.chart h3 { margin: 0 0 2px; font-size: 13px; }
+.chart small { font-weight: normal; opacity: .7; }
+.chart .u-legend { font-size: 11px; text-align: left; }
+#graph-status { font-size: 12px; opacity: .7; }
+.split-row { display: grid; grid-template-columns: 14ch 1fr 16ch; gap: 8px; align-items: center; font-size: 12px; }
+.split-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.split-bar { display: flex; height: 12px; background: rgba(128,128,128,.12); }
+.split-bar i { background: #2a7de1; display: block; }
+.split-bar b { background: #d1342f; display: block; }
+.split-num { text-align: right; font-variant-numeric: tabular-nums; }

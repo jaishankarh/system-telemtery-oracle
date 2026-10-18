@@ -4,6 +4,16 @@ Run on your Ubuntu laptop, as root, from a checkout of `integration/phase-1`. On
 
 Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build`.
 
+## Ticket 12: Advisor and Hardware Limit
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`. `curl -s 127.0.0.1:9191/api/advice | python3 -m json.tool` returns `window_seconds: 300`, `advice: []`, `pending`, and `disabled`. `disabled` is empty if your kernel has `/proc/pressure/memory`, `/proc/vmstat` and (when you have both zram and a swap file) `/sys/block/zram0/stat`; otherwise it lists the Hardware Limit rule with a one-line reason
+- [ ] On a normal day (no memory trouble) there is no Advice; the dashboard at http://127.0.0.1:9191 shows an Advice panel at the very top reading "No active Advice."
+- [ ] Hardware Limit must not fire on a short spike: run `stress-ng --vm 2 --vm-bytes 90% --timeout 60s`; `/api/advice` may show a `pending` entry during the run but never an entry in `advice`, and `pending` empties afterwards
+- [ ] To see a real verdict without buying RAM, use a short window: write `/etc/sys-telemetry-app/config.toml` with `advisor_window = "20s"` and `advisor_working_set_percent = 20`, `advisor_psi_percent = 1`, `advisor_thrash_pages_per_sec = 5`, restart, then run `stress-ng --vm 4 --vm-bytes 110% --timeout 120s`. Expect a critical or warning Hardware Limit in the panel with Working Set, installed RAM, Memory Deficit and "would cover it" sizes; compare Working Set with `free` plus swap in use, and that `swap_attribution` evidence matches your setup. Remove the config afterwards
+- [ ] `curl -s 127.0.0.1:9191/api/advice/events` shows `advice_started` and, after the stress ends, `advice_ended`
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` (with the instance above running) prints an "Advice" section from the running instance; with it stopped, it says it cannot verify the Sustained window and lists current conditions and disabled rules
+- [ ] Swap attribution on a machine with both zram and a swap file: `cat /sys/block/zram0/stat` counters increase when swapping, and `disk_swap_in/out` in the evidence is what is left after subtracting them from `grep -E 'pswp(in|out)' /proc/vmstat`
+
 ## Ticket 18: Self-guard and systemd install
 
 - [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`; in another shell `cat /proc/$(pgrep -f 'sys-telemetry-app.*run' | head -1)/oom_score_adj` prints `-1000`
@@ -55,3 +65,50 @@ Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build
 - [ ] Sorting: `?sort=cpu_percent&order=desc` and `?sort=name&order=asc` reorder rows; `?sort=nope` is HTTP 400; `?filter=firefox|chrome` narrows to matching Applications
 - [ ] Dashboard at http://127.0.0.1:9191: the Applications table is the first view and sorted by PSS + swap; clicking a header sorts (arrow shows direction); clicking a row expands its Processes with PID, user, PSS, swap, working directory and the full command line; the expansion survives the 2s refresh
 - [ ] Launch a program the tool has never heard of (for example a snap or Flatpak app, or `systemd-run --user --scope sleep 600`) and see it appear as its own Application without any config
+
+## Ticket 5: Containers and Pods
+
+Build and run as root: `make build && sudo ./dist/sys-telemetry-app-linux-amd64 run --port 8080`
+
+- [ ] Start a container: `docker run -d --name memtest --memory 256m alpine sleep 1000`. `curl -s localhost:8080/api/applications?filter=memtest | jq '.applications[] | {name,kind,container}'` shows kind "container", name "memtest", started_by "docker run", memory_limit_bytes 268435456.
+- [ ] Start one without a limit (`docker run -d --name nolimit alpine sleep 1000`): memory_limit_bytes is null.
+- [ ] If you use Compose: a compose container shows started_by "compose".
+- [ ] If containerd/nerdctl or k3s is installed: its containers show runtime "containerd"; k3s pods show kind "pod" named by pod name, with `.container.containers[]` listing each container and each process's `subgroup` naming its container.
+- [ ] kind: the kind node appears as one Docker Container (e.g. kind-control-plane); pods inside it are not split out (known limitation).
+- [ ] With Docker stopped (`sudo systemctl stop docker docker.socket`) the program keeps running and the container rows disappear without errors.
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` lists the containers in the Applications table.
+
+## Ticket 7: Dev & Build per Project and user grouping rules
+
+Run as root on the Ubuntu laptop. Start the binary: `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`.
+
+- [ ] In Cursor (or VS Code), open a project that is a git repository, open the built-in terminal and run `npm run dev` (or any dev server).
+- [ ] `curl -s localhost:9191/api/applications | jq '.applications[] | {name, kind, pids}'` shows `Dev & Build: <repo folder name>` with kind `devbuild`, containing the npm/node dev server processes, and the Cursor row no longer contains them.
+- [ ] Cursor's own language servers (tsserver, extension host) are still in the Cursor row (not in Dev & Build).
+- [ ] Start a second build in another repository (for example `cargo build` or `make`): a second `Dev & Build: <other repo>` row appears.
+- [ ] A build run in a directory with no VCS root appears as `Dev & Build: <that directory name>`.
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` lists the same Dev & Build rows under Applications.
+- [ ] Create `/etc/sys-telemetry-app/config.toml` with:
+  ```
+  [[group]]
+  name = "My terminal"
+  executable = "gnome-terminal-server"
+
+  [[rename]]
+  from = "Dev & Build: <repo folder name>"
+  to = "My dev server"
+  ```
+  Restart: an Application "My terminal" holds the terminal server, and the renamed row shows the new name. A typo in the file (unknown key, bad regex) makes the binary exit with a line-numbered error.
+
+## Ticket 8: Live graphs and SSE
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`
+- [ ] `curl -s 127.0.0.1:9191/api/system | python3 -m json.tool | grep -A12 '"pressure"'` shows cpu/memory/io `some_percent`/`full_percent` (null only on the first sample); `"disks"` lists whole devices (nvme0n1, sda; no partitions, loop, zram). `missing` lists `/proc/pressure` only if your kernel lacks PSI
+- [ ] Idle cost: before opening a browser, `curl -s 127.0.0.1:9191/api/live/stats` shows `"clients":0,"stream_encodes":0`, and stays 0 after 30s
+- [ ] After ~1 minute, `curl -s 127.0.0.1:9191/api/live | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["points"]), d["window_seconds"])'` prints about 30 points (at 2s) and 300; after 6+ minutes it stays at ~150 points
+- [ ] Open http://127.0.0.1:9191: the Graphs section shows CPU, RAM vs swap, Memory pressure, I/O pressure, Disk throughput, Swap-in/out, and the Top 10 Applications RAM/swap bars. On open the charts already show the last 5 minutes; all move every ~2s. Charts for data your kernel lacks (for example no PSI) are hidden
+- [ ] Generate load: `stress-ng --vm 2 --vm-bytes 90% --timeout 60s` (RAM and swap lines rise, memory pressure and swap-in/out rise); `dd if=/dev/zero of=/tmp/x bs=1M count=3000 oflag=direct` (disk write throughput rises); `yes >/dev/null` (CPU rises). Values agree with `vmstat 1` / `iostat -x 1` / `cat /proc/pressure/memory`
+- [ ] While the page is open `curl -s 127.0.0.1:9191/api/live/stats` shows `clients` 1 and `stream_encodes` rising by 1 per sample. `curl -N 127.0.0.1:9191/api/live/stream` prints a `data: {...}` line every 2s
+- [ ] Close the tab (or switch to another tab: streaming pauses while hidden): `clients` returns to 0 and `stream_encodes` stops rising; reopening resumes it and the graph backfills the gap
+- [ ] Works offline: disconnect the network, reload; charts still draw (uPlot is embedded)
+- [ ] Narrow the window to half a laptop screen: charts reflow to one column without horizontal page scroll

@@ -15,6 +15,7 @@ type Linux struct {
 	m    machine.Machine
 	prev *prevReading
 	proc procState
+	ps   pressureState // pressure.go
 }
 
 type prevReading struct {
@@ -88,6 +89,7 @@ func (l *Linux) Collect() (Sample, error) {
 		s.Swap.ZswapEnabled = &v
 	}
 
+	l.collectPressureAndDisks(now, &s)
 	l.collectProcesses(now, &s)
 	sort.Strings(s.Missing)
 	l.prev = cur

@@ -111,7 +111,7 @@ func (c compiledRecogniser) matches(p *collector.Process) bool {
 	return c.cmd != nil && !strings.HasPrefix(p.Command, "[") && c.cmd.MatchString(p.Command)
 }
 
-type compiledRule struct {
+type compiledRoleRule struct {
 	role  string
 	match compiledRecogniser
 }
@@ -119,7 +119,7 @@ type compiledRule struct {
 type compiledProfile struct {
 	Profile
 	roots []compiledRecogniser
-	rules []compiledRule
+	rules []compiledRoleRule
 }
 
 // helperFlag marks a command line as a helper of a Chromium, Electron or Firefox program.
@@ -153,7 +153,7 @@ func NewAppProfilesFrom(defs []Profile) *AppProfiles {
 			cp.roots = append(cp.roots, compileRecogniser(r))
 		}
 		for _, r := range d.Roles {
-			cp.rules = append(cp.rules, compiledRule{r.Role, compileRecogniser(r.Match)})
+			cp.rules = append(cp.rules, compiledRoleRule{r.Role, compileRecogniser(r.Match)})
 		}
 		a.profiles = append(a.profiles, cp)
 	}
