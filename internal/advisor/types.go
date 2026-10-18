@@ -112,6 +112,9 @@ type Snapshot struct {
 	Advice        []Advice   `json:"advice"`
 	Pending       []Pending  `json:"pending"`
 	Disabled      []Disabled `json:"disabled"`
+	// Hidden lists Advice marked Hidden or Snoozed, active or not, so it can be unhidden.
+	Hidden        []Marked `json:"hidden"`
+	SnoozePresets []Preset `json:"snooze_presets"`
 }
 
 // Event types emitted for History (#11).

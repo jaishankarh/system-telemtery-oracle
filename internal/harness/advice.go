@@ -2,6 +2,8 @@ package harness
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 )
@@ -89,4 +91,43 @@ func (m *Machine) ReadFileOrEmpty(path string) string {
 		return ""
 	}
 	return s
+}
+
+// Post sends a POST with a JSON body to the program, like the dashboard does,
+// and returns status and body. Headers (for example "Origin") are added on top.
+func (p *Program) Post(path, body string, headers ...string) (int, []byte) {
+	p.t.Helper()
+	req, err := http.NewRequest(http.MethodPost, "http://"+p.Addr+path, strings.NewReader(body))
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for i := 0; i+1 < len(headers); i += 2 {
+		if headers[i+1] == "" {
+			req.Header.Del(headers[i])
+		} else {
+			req.Header.Set(headers[i], headers[i+1])
+		}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
+// PostHost is Post with a different Host header, as a DNS-rebinding page would send.
+func (p *Program) PostHost(path, body, host string) int {
+	p.t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, "http://"+p.Addr+path, strings.NewReader(body))
+	req.Host = host
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		p.t.Fatalf("POST %s: %v", path, err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
 }

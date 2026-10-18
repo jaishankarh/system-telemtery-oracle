@@ -92,6 +92,13 @@ func printSnapshot(w io.Writer, s advisor.Snapshot) {
 	for _, p := range s.Pending {
 		fmt.Fprintf(w, "pending (not yet Sustained): %s, %.0fs to go\n", p.Title, p.SecondsRemaining)
 	}
+	for _, h := range s.Hidden {
+		if h.State == advisor.StateSnoozed {
+			fmt.Fprintf(w, "snoozed until %s: %s (id %s)\n", h.Until.Format("2006-01-02 15:04"), h.Title, h.ID)
+		} else {
+			fmt.Fprintf(w, "hidden (until Severity rises above %s): %s (id %s)\n", h.Severity, h.Title, h.ID)
+		}
+	}
 	for _, d := range s.Disabled {
 		fmt.Fprintf(w, "disabled: %s: %s\n", d.Title, d.Reason)
 	}

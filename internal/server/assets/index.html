@@ -10,9 +10,11 @@
 <body>
 <h1>sys-telemetry-app</h1>
 <p id="status">waiting for first sample</p>
+<section id="unavailable" hidden><h2>Unavailable on this machine</h2><ul id="unavailable-list"></ul></section>
 <section id="advice"><h2>Advice</h2>
 <div id="advice-list"><p>waiting for first sample</p></div>
 <div id="advice-pending"></div>
+<ul id="advice-hidden"></ul>
 <ul id="advice-disabled"></ul></section>
 <section id="graphs"><h2>Graphs <span id="graph-status"></span></h2>
 <div id="graph-grid"></div>
@@ -21,9 +23,9 @@
 <input id="app-filter" type="search" placeholder="filter by name or command" aria-label="filter applications">
 <span id="app-filter-error"></span>
 <div class="scroll"><table id="app-table"><thead><tr></tr></thead><tbody></tbody></table></div></section>
-<section><h2>CPU</h2><pre id="cpu"></pre></section>
-<section><h2>RAM</h2><pre id="ram"></pre></section>
-<section><h2>Swap</h2><pre id="swap"></pre></section>
+<section hidden><h2>CPU</h2><pre id="cpu"></pre></section>
+<section hidden><h2>RAM</h2><pre id="ram"></pre></section>
+<section hidden><h2>Swap</h2><pre id="swap"></pre></section>
 <section id="processes"><h2>Processes</h2>
 <input id="filter" type="search" placeholder="filter by PID, name or regex" aria-label="filter processes">
 <span id="filter-error"></span>

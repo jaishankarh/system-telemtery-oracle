@@ -90,7 +90,7 @@ func NewPoint(s collector.Sample, apps []grouping.Application) Point {
 		if len(p.TopApps) == TopApplications {
 			break
 		}
-		if a.PSS == nil && a.Swap == nil {
+		if a.PSS == nil { // the RAM part of the split is PSS; without it the Application is hidden, not shown as 0
 			continue
 		}
 		sp := AppSplit{Name: a.Name}
