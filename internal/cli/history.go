@@ -16,6 +16,7 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/history"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
 // ErrKilled, used as a context cancel cause, makes run stop the way a killed
@@ -42,6 +43,7 @@ func withHistory(rec *history.Recorder, next http.Handler) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		w.Header().Set(history.InstanceHeader, "1") // replay checks this before trusting the address
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(w).Encode(res)
@@ -144,7 +146,7 @@ func askInstance(env Env, q history.Query) (history.Result, bool) {
 		return history.Result{}, false
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != 200 || resp.Header.Get(history.InstanceHeader) == "" { // some other service on that address
 		io.Copy(io.Discard, resp.Body)
 		return history.Result{}, false
 	}
@@ -210,7 +212,7 @@ func (k *killableRecorder) Close() {
 // can ask this instance; the returned func removes it on clean exit.
 func announceInstance(env Env, ctx context.Context, addr string) func() {
 	path := env.Machine.StateDir + "/" + history.InstanceFile
-	if os.MkdirAll(env.Machine.StateDir, 0o700) != nil || os.WriteFile(path, []byte(addr), 0o600) != nil {
+	if machine.EnsurePrivateDir(env.Machine.StateDir) != nil || os.WriteFile(path, []byte(addr), 0o600) != nil {
 		return func() {}
 	}
 	return func() {

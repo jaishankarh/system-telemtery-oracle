@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
 // StateFile is the one file this tool writes besides its own process settings
@@ -87,11 +89,11 @@ func (a *Advisor) saveLocked() error {
 	d := stateDoc{Version: 1, Marked: a.markedList()}
 	b, _ := json.MarshalIndent(d, "", "  ")
 	path := a.statePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := machine.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

@@ -38,6 +38,9 @@ const (
 	FileName = "history.ring"
 	// InstanceFile holds the address of the running instance's server.
 	InstanceFile = "instance.addr"
+	// InstanceHeader marks a response as coming from this program, so replay
+	// does not trust whatever answers on a stale recorded address.
+	InstanceHeader = "X-Sys-Telemetry-App"
 	// FileSize is the fixed size of the ring file.
 	FileSize = HeaderSize + SlotCount*SlotSize + EventCount*EventSize
 )

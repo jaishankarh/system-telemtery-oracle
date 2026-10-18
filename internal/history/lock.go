@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
 // LockFile sits next to the ring in the state dir. The running instance holds
@@ -19,7 +21,7 @@ var ErrLocked = errors.New("another sys-telemetry-app instance is recording Hist
 // lockState takes the exclusive, non-blocking lock. The kernel drops it when
 // the process dies, so a crash never leaves a stale lock.
 func lockState(stateDir string) (*os.File, error) {
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+	if err := machine.EnsurePrivateDir(stateDir); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(filepath.Join(stateDir, LockFile), os.O_RDWR|os.O_CREATE, 0o600)

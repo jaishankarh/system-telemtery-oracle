@@ -95,3 +95,13 @@ func (r realTicker) Stop()               { r.t.Stop() }
 // ReadFileAt reads a path that is already real (for example under StateDir),
 // bypassing Root.
 func (m Machine) ReadFileAt(p string) ([]byte, error) { return os.ReadFile(p) }
+
+// EnsurePrivateDir creates dir (and parents) and makes dir itself root-only
+// (0700), tightening one an older version left world-readable. The state dir
+// holds command lines and Settings Fix state, so only its owner may read it.
+func EnsurePrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(dir, 0o700)
+}
