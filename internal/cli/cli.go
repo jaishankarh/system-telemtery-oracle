@@ -104,6 +104,7 @@ func parseFlags(env Env, name string, args []string) (config.Config, error) {
 
 func run(ctx context.Context, env Env, cfg config.Config) int {
 	guard := selfguard.Start(env.Machine)
+	guard.Log = func(s string) { fmt.Fprintln(env.Stderr, "notice:", s) }
 	if st := guard.Status(); !st.OOMProtected {
 		fmt.Fprintln(env.Stderr, "warning: could not exempt own process from the OOM killer:", st.OOMError)
 	}
@@ -112,6 +113,7 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 	adv := advisor.New(env.Machine, cfg.Advisor, advisor.DefaultRules())
 	adv.AllowStateWrites() // only the running instance writes Hidden/Snoozed state
 	srv.SetAdvisor(adv)
+	guard.OnShed(srv.Shed)
 	first, _ := col.Collect()
 	srv.Update(first)
 	rec := startHistory(env, ctx, newGrouper(env), first)

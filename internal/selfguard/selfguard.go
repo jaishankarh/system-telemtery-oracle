@@ -21,6 +21,8 @@ const (
 	DefaultCap uint64 = 64 << 20
 	// ShedFraction of the cap at which caches are shed.
 	ShedFraction = 0.8
+	// SoftLimitFraction of the cap is the Go runtime's soft memory limit.
+	SoftLimitFraction = 0.9
 	// UnitName is the installed systemd unit.
 	UnitName = "sys-telemetry-app.service"
 	// UnitPath is where the unit file lives.
@@ -46,6 +48,8 @@ type Guard struct {
 	mu       sync.Mutex
 	st       Status
 	shedders []func()
+	// Log, if set, receives a line each time caches are shed.
+	Log func(string)
 }
 
 // Start sets the own OOM score and works out the memory cap. A failure to set
@@ -62,6 +66,9 @@ func Start(m machine.Machine) *Guard {
 	if c, ok := systemdCap(m); ok && c < DefaultCap {
 		g.st.MemoryCapBytes, g.st.CapSource = c, "systemd"
 	}
+	// A soft limit makes the Go runtime collect harder as it nears the cap, so the
+	// cap is rarely reached at all. Own process only (ADR 0003).
+	g.m.Host.SetMemoryLimit(int64(float64(g.st.MemoryCapBytes) * SoftLimitFraction))
 	return g
 }
 
@@ -81,6 +88,9 @@ func (g *Guard) Check() {
 		return
 	}
 	g.st.ShedCount++
+	if g.Log != nil {
+		g.Log(fmt.Sprintf("memory %d MiB is near the %d MiB cap: shed caches (%d shed so far)", rss>>20, g.st.MemoryCapBytes>>20, g.st.ShedCount))
+	}
 	fs := append([]func(){}, g.shedders...)
 	g.mu.Unlock()
 	for _, f := range fs {

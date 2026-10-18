@@ -142,3 +142,36 @@ func TestReportAndOtherCommandsTouchNothingOnTheHost(t *testing.T) {
 		t.Fatalf("run changed more than its own OOM score: writes=%d units=%v calls=%v", m.Host.OOMWrites(), m.Host.Units(), m.Host.Systemctls())
 	}
 }
+
+func TestNearTheCapTheLiveBufferIsShedAndSaidSo(t *testing.T) {
+	m := harness.New(t, fx)
+	p := m.Start()
+	for i := 0; i < 100; i++ { // 200 s of the 5-minute Live buffer
+		p.Tick()
+	}
+	count := func() int {
+		var l struct {
+			Points []struct{} `json:"points"`
+		}
+		p.GetJSON("/api/live", &l)
+		return len(l.Points)
+	}
+	before := count()
+	m.Host.SetRSS(56 << 20)
+	p.Tick()
+	if after := count(); after >= before/2 {
+		t.Fatalf("Live buffer held %d points, still %d after shedding near the cap", before, after)
+	}
+	if !strings.Contains(p.Stderr(), "shed") {
+		t.Fatalf("shedding should be logged to stderr:\n%s", p.Stderr())
+	}
+}
+
+func TestOwnMemoryLimitIsSetBelowTheCap(t *testing.T) {
+	m := harness.New(t, fx)
+	m.Start()
+	got := m.Host.MemoryLimit()
+	if got <= 0 || got >= 64<<20 {
+		t.Fatalf("Go memory limit = %d, want a soft limit just under the 64 MiB cap", got)
+	}
+}

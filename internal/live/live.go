@@ -163,3 +163,19 @@ func (b *Buffer) Snapshot() []Point {
 	defer b.mu.Unlock()
 	return append([]Point(nil), b.points...)
 }
+
+// Shed drops all but the newest keep of the buffered Points, to give memory
+// back when the program nears its own cap. The Graphs refill as samples arrive.
+func (b *Buffer) Shed(keep time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.points) == 0 {
+		return
+	}
+	cut := b.points[len(b.points)-1].Time.Add(-keep)
+	i := 0
+	for i < len(b.points)-1 && b.points[i].Time.Before(cut) {
+		i++
+	}
+	b.points = append([]Point(nil), b.points[i:]...)
+}

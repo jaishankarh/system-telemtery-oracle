@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 )
@@ -16,6 +17,8 @@ import (
 type Host interface {
 	// SetOOMScoreAdj sets the OOM score adjustment of the program's own process.
 	SetOOMScoreAdj(v int) error
+	// SetMemoryLimit sets the soft memory limit of the program's own Go runtime.
+	SetMemoryLimit(bytes int64)
 	// SelfRSSBytes is the resident memory of the program's own process.
 	SelfRSSBytes() (uint64, error)
 	// WriteUnit creates or replaces the program's systemd unit file.
@@ -33,6 +36,8 @@ type realHost struct{}
 func (realHost) SetOOMScoreAdj(v int) error {
 	return os.WriteFile("/proc/self/oom_score_adj", []byte(strconv.Itoa(v)), 0o644)
 }
+
+func (realHost) SetMemoryLimit(n int64) { debug.SetMemoryLimit(n) }
 
 func (realHost) SelfRSSBytes() (uint64, error) {
 	b, err := os.ReadFile("/proc/self/status")

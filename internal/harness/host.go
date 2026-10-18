@@ -16,6 +16,7 @@ type FakeHost struct {
 	systemctls  [][]string
 	rss         uint64
 	exe         string
+	memLimit    int64
 	OOMErr      error // set to make the OOM score write fail (e.g. not root)
 	SystemctlEr error // set to make systemctl fail
 }
@@ -69,6 +70,11 @@ func (h *FakeHost) SetOOMScoreAdj(v int) error {
 	h.oom = &v
 	return nil
 }
+
+// MemoryLimit is the soft memory limit the program set on its own Go runtime (0: none).
+func (h *FakeHost) MemoryLimit() int64 { h.mu.Lock(); defer h.mu.Unlock(); return h.memLimit }
+
+func (h *FakeHost) SetMemoryLimit(n int64) { h.mu.Lock(); h.memLimit = n; h.mu.Unlock() }
 func (h *FakeHost) SelfRSSBytes() (uint64, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

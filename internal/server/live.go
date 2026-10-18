@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
@@ -27,6 +28,9 @@ type liveFeed struct {
 	clients map[chan []byte]struct{}
 	encodes atomic.Int64
 }
+
+// Shed trims the Live buffer to its newest minute (selfguard calls it near the memory cap).
+func (s *Server) Shed() { s.live.buf.Shed(time.Minute) }
 
 func newLiveFeed() *liveFeed { return &liveFeed{clients: map[chan []byte]struct{}{}} }
 
