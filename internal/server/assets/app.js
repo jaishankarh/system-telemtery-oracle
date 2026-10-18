@@ -166,3 +166,59 @@ buildAppHeader();
 document.getElementById("app-filter").addEventListener("input", refreshApplications);
 refreshApplications();
 setInterval(refreshApplications, 2000);
+
+// Advice panel: /api/advice is the whole story (Sustained is decided server side).
+// Each item carries data-advice-id, the stable identity Hide/Snooze will key on.
+function adviceFact(f) {
+  if (f.value == null) return `${f.name}: ${f.text}`;
+  const avg = f.avg == null ? "" : ` (avg ${f.avg.toFixed(1)})`;
+  return `${f.name}: ${f.value.toFixed(1)} ${f.unit || ""}${avg}`;
+}
+function adviceItem(a) {
+  const el = document.createElement("article");
+  el.className = "advice sev-" + a.severity;
+  el.dataset.adviceId = a.id;
+  const h = document.createElement("h3");
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = a.severity;
+  h.append(badge, ` ${a.category === "hardware_limit" ? "Hardware Limit" : "Settings Fix"}: ${a.title}`);
+  const p = document.createElement("p");
+  p.textContent = a.summary;
+  el.append(h, p);
+  if (a.applications.length) {
+    const ap = document.createElement("p");
+    ap.textContent = "Applications: " + a.applications.map(x => x.name).join(", ");
+    el.append(ap);
+  }
+  const d = document.createElement("details");
+  const sm = document.createElement("summary");
+  const e = a.evidence;
+  sm.textContent = `Evidence over ${Math.round(e.window_seconds)}s (${new Date(e.start).toLocaleTimeString()} to ${new Date(e.end).toLocaleTimeString()})`;
+  const ul = document.createElement("ul");
+  e.facts.forEach(f => { const li = document.createElement("li"); li.textContent = adviceFact(f); ul.append(li); });
+  d.append(sm, ul);
+  el.append(d);
+  if (a.change) {
+    const pre = document.createElement("pre");
+    pre.className = "change";
+    pre.textContent = `# ${a.change.kind}: ${a.change.target}\n${a.change.content}`;
+    el.append(pre);
+  }
+  return el;
+}
+async function refreshAdvice() {
+  try {
+    const r = await fetch("/api/advice");
+    if (!r.ok) return;
+    const s = await r.json();
+    const list = document.getElementById("advice-list");
+    list.replaceChildren(...(s.advice.length ? s.advice.map(adviceItem) : [Object.assign(document.createElement("p"), { textContent: "No active Advice." })]));
+    document.getElementById("advice-pending").textContent = s.pending.length
+      ? "Watching (not yet Sustained over " + Math.round(s.window_seconds) + "s): " + s.pending.map(p => `${p.title} (${Math.round(p.seconds_remaining)}s to go)`).join("; ")
+      : "";
+    document.getElementById("advice-disabled").replaceChildren(...s.disabled.map(x => Object.assign(document.createElement("li"), { textContent: `Disabled: ${x.title}: ${x.reason}` })));
+  } catch (e) { /* the status line already shows a disconnect */ }
+}
+refreshAdvice();
+setInterval(refreshAdvice, 2000);

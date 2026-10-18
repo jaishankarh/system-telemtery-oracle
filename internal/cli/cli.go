@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaishankarh/system-telemtery-oracle/internal/advisor"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/config"
 	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
@@ -49,7 +50,7 @@ func Run(ctx context.Context, env Env, args []string) int {
 			return 2
 		}
 		if cmd == "report" {
-			return report(env, collector.NewLinux(env.Machine))
+			return report(env, cfg, collector.NewLinux(env.Machine))
 		}
 		return run(ctx, env, cfg)
 	case "install", "uninstall":
@@ -101,6 +102,7 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 	}
 	col := collector.NewLinux(env.Machine)
 	srv := server.New(cfg.Interval, grouping.Default(env.Machine))
+	srv.SetAdvisor(advisor.New(env.Machine, cfg.Advisor, advisor.DefaultRules()))
 	first, _ := col.Collect()
 	srv.Update(first)
 

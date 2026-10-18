@@ -21,10 +21,13 @@ const DefaultPath = "/etc/sys-telemetry-app/config.toml"
 type Config struct {
 	Port     int
 	Interval time.Duration
+	Advisor  Advisor
 }
 
 // Default returns the built-in settings.
-func Default() Config { return Config{Port: 9191, Interval: 2 * time.Second} }
+func Default() Config {
+	return Config{Port: 9191, Interval: 2 * time.Second, Advisor: DefaultAdvisor()}
+}
 
 // Parse overlays the file contents onto the defaults.
 func Parse(data []byte) (Config, error) {
@@ -56,6 +59,12 @@ func Parse(data []byte) (Config, error) {
 			}
 			c.Interval = d
 		default:
+			if ok, err := c.Advisor.set(k, v, i+1); ok {
+				if err != nil {
+					return c, err
+				}
+				continue
+			}
 			return c, fmt.Errorf("line %d: unknown key %q", i+1, k)
 		}
 	}

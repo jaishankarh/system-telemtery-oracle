@@ -245,3 +245,9 @@ func (p *Program) Tick() {
 	}
 	p.t.Fatal("program did not take a sample after Tick")
 }
+
+// tryRead returns a file's content or an error (ReadFile fails the test instead).
+func (m *Machine) tryRead(path string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(m.Root, path))
+	return string(b), err
+}
