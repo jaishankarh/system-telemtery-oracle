@@ -33,6 +33,13 @@
 // nothing can name. Each has /proc/<pid>/{cgroup,cwd (symlink),stat,status,...}.
 // Application endpoint: GET /api/applications?sort=<json field>&order=asc|desc&filter=<regex>.
 //
+// Fixture "dev-box-profiles" (regenerate with scripts/gen-profiles-fixture.py)
+// is a desktop running every built-in App Profile: Cursor, VS Code and
+// Windsurf with extension hosts, language servers, ripgrep and a terminal;
+// Android Studio and IntelliJ IDEA with their daemons; Chrome, Chromium, Brave,
+// Edge and Firefox with renderers; a standalone Gradle daemon; the Android
+// emulator. Application members carry a "role" there.
+//
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
 // container sockets, fake GPU reader) as new fields on Machine.

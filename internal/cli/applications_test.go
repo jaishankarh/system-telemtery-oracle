@@ -163,7 +163,7 @@ func TestDrilldownShowsFullCommandLinesCwdAndCgroup(t *testing.T) {
 			tsserver = pr
 		}
 	}
-	if tsserver.Command != "node /usr/share/code/tsserver.js" || tsserver.Cwd != "/home/dev/my proj" ||
+	if tsserver.Command != "node /opt/acme-ide/server.js" || tsserver.Cwd != "/home/dev/my proj" ||
 		tsserver.Cgroup != "/user.slice/user-1000.slice/user@1000.service/app.slice/app-gnome-code-4242.scope" || tsserver.PPID != 100 {
 		t.Fatalf("pid 101 = %+v", tsserver)
 	}
@@ -240,7 +240,7 @@ func TestGroupingDegradesWithoutCgroupV2(t *testing.T) {
 	if a := l.find(t, "spotify"); a.Kind != "snap" || len(a.PIDs) != 2 {
 		t.Fatalf("cgroup v1 snap = %+v", a)
 	}
-	if a := l.find(t, "code"); a.Kind != "ancestor" || !equalInts(sortedPIDs(a), []int{100, 101}) {
-		t.Fatalf("without cgroup, code falls back to its top ancestor: %+v", a)
+	if a := l.find(t, "acme-ide"); a.Kind != "ancestor" || !equalInts(sortedPIDs(a), []int{100, 101}) {
+		t.Fatalf("without cgroup, acme-ide falls back to its top ancestor: %+v", a)
 	}
 }

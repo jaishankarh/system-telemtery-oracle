@@ -1,0 +1,7 @@
+Name:	rust-analyzer
+Tgid:	105
+Pid:	105
+Uid:	1000	1000	1000	1000
+VmRSS:	900000 kB
+VmSwap:	100000 kB
+Threads:	4
