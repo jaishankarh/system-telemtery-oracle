@@ -1,0 +1,5 @@
+Name:	kthreadd
+Tgid:	2
+Pid:	2
+Uid:	1000	1000	1000	1000
+Threads:	4

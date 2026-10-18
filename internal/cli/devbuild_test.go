@@ -20,7 +20,7 @@ func TestDevServerInEditorTerminalLeavesTheEditorRow(t *testing.T) {
 		t.Errorf("shop = kind %s pids %v", shop.Kind, shop.PIDs)
 	}
 	// the editor keeps only its own processes, including its language server
-	editor := l.find(t, "cursor")
+	editor := l.find(t, "Cursor") // the Cursor App Profile
 	if !equalInts(sortedPIDs(editor), []int{1000, 1001, 1002, 1006}) {
 		t.Errorf("editor row = %v, want the dev server removed", editor.PIDs)
 	}

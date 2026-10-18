@@ -133,7 +133,7 @@ function drilldown(a) {
   const t = document.createElement("table");
   a.processes.forEach(p => {
     const r = document.createElement("tr");
-    [p.pid, p.user, p.subgroup || "", cell(p.pss_bytes, "bytes"), cell(p.swap_bytes, "bytes"), p.cwd || "", p.command].forEach((v, i) => {
+    [p.pid, p.user, p.role || p.subgroup || "", cell(p.pss_bytes, "bytes"), cell(p.swap_bytes, "bytes"), p.cwd || "", p.command].forEach((v, i) => {
       const c = document.createElement("td");
       c.textContent = v;
       c.className = i >= 5 ? "text cmd-full" : (i === 1 || i === 2 ? "text" : "");

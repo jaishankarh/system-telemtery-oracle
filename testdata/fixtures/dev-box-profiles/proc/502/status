@@ -1,0 +1,7 @@
+Name:	chrome
+Tgid:	502
+Pid:	502
+Uid:	1000	1000	1000	1000
+VmRSS:	250000 kB
+VmSwap:	0 kB
+Threads:	4

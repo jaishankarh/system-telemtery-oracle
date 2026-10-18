@@ -1,0 +1,7 @@
+Name:	qemu-system-x86
+Tgid:	311
+Pid:	311
+Uid:	1000	1000	1000	1000
+VmRSS:	3000000 kB
+VmSwap:	0 kB
+Threads:	4

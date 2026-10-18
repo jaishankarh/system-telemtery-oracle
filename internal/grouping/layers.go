@@ -6,7 +6,7 @@ package grouping
 //	Container / Pod                   (ContainerPod)
 //	user rules from the config file   (UserRules; Configured fills it; before App Profiles)
 //	Dev & Build per Project           (DevBuild; ahead of App Profiles, see its doc comment)
-//	App Profiles                      (later tickets)
+//	App Profiles                      (NewAppProfiles; the table is in profiles_table.go)
 //	kernel threads
 //	systemd unit, snap, flatpak
 //	top ancestor
@@ -17,6 +17,7 @@ func DefaultLayers() []Layer {
 		&ContainerPod{},
 		UserRules{},
 		&DevBuild{},
+		NewAppProfiles(),
 		KernelThreads{},
 		CgroupUnit{},
 		TopAncestor{},
