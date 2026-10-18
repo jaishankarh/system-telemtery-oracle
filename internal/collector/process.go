@@ -53,6 +53,9 @@ type procPrev struct {
 	memAt   time.Time
 	seenAt  time.Time
 	haveMem bool
+	// noRollup remembers that smaps_rollup does not exist, so the source stays
+	// listed as missing on samples that do not re-read memory detail.
+	noRollup bool
 }
 
 type procState struct {
@@ -105,7 +108,7 @@ func (l *Linux) readProcess(pid int, now time.Time, users map[string]string, old
 		old = nil // PID reused by a different process
 	}
 	if old != nil {
-		st.pss, st.swap, st.memAt, st.haveMem = old.pss, old.swap, old.memAt, old.haveMem
+		st.pss, st.swap, st.memAt, st.haveMem, st.noRollup = old.pss, old.swap, old.memAt, old.haveMem, old.noRollup
 	}
 
 	var vmRSS, vmSwap *uint64
@@ -162,11 +165,12 @@ func (l *Linux) readProcess(pid int, now time.Time, users map[string]string, old
 		if b, err := l.m.ReadFile(dir + "/smaps_rollup"); err == nil {
 			st.pss, st.swap = parseRollup(b)
 		} else {
-			if userProcess && errors.Is(err, fs.ErrNotExist) {
-				miss["/proc/PID/smaps_rollup"] = true
-			}
+			st.noRollup = userProcess && errors.Is(err, fs.ErrNotExist)
 			st.swap = vmSwap // kernels before 4.14: swap only
 		}
+	}
+	if st.noRollup {
+		miss["/proc/PID/smaps_rollup"] = true
 	}
 	p.PSS, p.Swap = st.pss, st.swap
 	return p, st, true

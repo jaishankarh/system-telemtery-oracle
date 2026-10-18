@@ -46,6 +46,11 @@
 // a "container" object in /api/applications (runtime, started_by,
 // memory_limit_bytes, containers).
 //
+// Degradation variants (variants.go): harness.NewModern(t) has every optional source; m.AsCgroupV1(),
+// m.WithoutPSI(), WithoutGPU(), WithoutContainerRuntime(), WithoutSystemd(), CompressedSwapOnly() and
+// OldKernelWithoutSmapsRollup() take one away. Assert on /api/availability and the `report` section
+// "Unavailable on this machine".
+//
 // Fixture "dev-box-profiles" (regenerate with scripts/gen-profiles-fixture.py)
 // is a desktop running every built-in App Profile: Cursor, VS Code and
 // Windsurf with extension hosts, language servers, ripgrep and a terminal;
