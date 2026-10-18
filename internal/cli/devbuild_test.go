@@ -10,7 +10,7 @@ import (
 const devBuild = "dev-box-dev-build"
 
 func TestDevServerInEditorTerminalLeavesTheEditorRow(t *testing.T) {
-	m := harness.New(t, devBuild)
+	m := newDevBuildMachine(t)
 	p := m.Start()
 	var l appList
 	p.GetJSON("/api/applications", &l)
@@ -37,7 +37,7 @@ func TestDevServerInEditorTerminalLeavesTheEditorRow(t *testing.T) {
 }
 
 func TestTwoProjectsBuildsAreTwoRows(t *testing.T) {
-	m := harness.New(t, devBuild)
+	m := newDevBuildMachine(t)
 	p := m.Start()
 	var l appList
 	p.GetJSON("/api/applications", &l)
@@ -58,14 +58,14 @@ func TestTwoProjectsBuildsAreTwoRows(t *testing.T) {
 }
 
 func TestDevBuildInReport(t *testing.T) {
-	m := harness.New(t, devBuild)
+	m := newDevBuildMachine(t)
 	if out := m.Report(); !strings.Contains(out, "Dev & Build: shop") {
 		t.Errorf("report lacks Dev & Build row:\n%s", out)
 	}
 }
 
 func TestConfigRuleCreatesAnApplication(t *testing.T) {
-	m := harness.New(t, devBuild)
+	m := newDevBuildMachine(t)
 	m.WriteFile("/etc/sys-telemetry-app/config.toml", `
 # user rules run first
 [[group]]
@@ -102,7 +102,7 @@ cgroup = 'app-flatpak-org\.mozilla'
 }
 
 func TestConfigRuleRenamesAnApplication(t *testing.T) {
-	m := harness.New(t, devBuild)
+	m := newDevBuildMachine(t)
 	m.WriteFile("/etc/sys-telemetry-app/config.toml", `
 [[rename]]
 from = "org.mozilla.firefox"
@@ -124,7 +124,7 @@ to = "Shop dev servers"
 }
 
 func TestBadGroupRuleFailsClearly(t *testing.T) {
-	m := harness.New(t, devBuild)
+	m := newDevBuildMachine(t)
 	for name, cfg := range map[string]string{
 		"bad regex":      "[[group]]\nname = \"x\"\ncommand = \"(\"\n",
 		"no name":        "[[group]]\nexecutable = \"x\"\n",
@@ -160,7 +160,7 @@ func TestWhichCommandsAreDevAndBuildJobs(t *testing.T) {
 		{"/usr/lib/gcc/x86_64-linux-gnu/13/cc1 -quiet main.c", true},
 	}
 	for _, c := range cases {
-		m := harness.New(t, devBuild)
+		m := newDevBuildMachine(t)
 		m.WriteFile("/proc/1013/cmdline", strings.ReplaceAll(c.cmd, " ", "\x00")+"\x00")
 		var l appList
 		m.Start().GetJSON("/api/applications", &l)
@@ -174,4 +174,20 @@ func TestWhichCommandsAreDevAndBuildJobs(t *testing.T) {
 			t.Errorf("%q: claimed = %v, want %v", c.cmd, got, c.claimed)
 		}
 	}
+}
+
+// newDevBuildMachine loads the dev-box-dev-build fixture and creates the project
+// directories at test time. Git refuses to track anything under a path component
+// named ".git" and drops empty directories, so the VCS markers cannot live in the
+// fixture tree: shop and tool are VCS roots, scratch is not.
+func newDevBuildMachine(t *testing.T) *harness.Machine {
+	t.Helper()
+	m := harness.New(t, devBuild)
+	for _, root := range []string{"/home/dev/shop", "/home/dev/tool"} {
+		m.WriteFile(root+"/.git/HEAD", "ref: refs/heads/main\n")
+	}
+	for _, dir := range []string{"/home/dev/shop/web", "/home/dev/shop/api", "/home/dev/tool/crates/core", "/home/dev/scratch"} {
+		m.WriteFile(dir+"/.keep", "")
+	}
+	return m
 }

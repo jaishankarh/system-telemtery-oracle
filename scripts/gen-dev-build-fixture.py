@@ -13,7 +13,9 @@ U = "/user.slice/user-1000.slice"
 UM = U + "/user@1000.service"
 CURSOR = UM + "/app.slice/app-gnome-cursor-5150.scope"
 VTE2 = UM + "/app.slice/vte-spawn-9f9f.scope"
-# project directories: shop and tool are VCS roots; scratch is not
+# project directories: shop and tool are VCS roots; scratch is not.
+# NOTE: git cannot track anything under a '.git' path component, so these are
+# recreated at test time by newDevBuildMachine in internal/cli/devbuild_test.go.
 for d in ["home/dev/shop/.git", "home/dev/shop/web", "home/dev/shop/api", "home/dev/tool/.git",
           "home/dev/tool/crates/core", "home/dev/scratch"]:
     os.makedirs(os.path.join(dst, d), exist_ok=True)
