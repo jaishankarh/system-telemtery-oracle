@@ -128,7 +128,9 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 		fmt.Fprintln(env.Stderr, "error:", err)
 		return 1
 	}
-	hs := &http.Server{Handler: server.LoopbackOnly(withSelf(guard, withHistory(rec.Recorder, srv.Handler()))), ReadHeaderTimeout: 5 * time.Second}
+	hs := &http.Server{Handler: server.LoopbackOnly(withSelf(guard, withHistory(rec.Recorder, srv.Handler()))), ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	hs.RegisterOnShutdown(srv.CloseStreams)
 	go hs.Serve(ln)
 	if !rec.otherInstance {
 		defer announceInstance(env, ctx, ln.Addr().String())()
@@ -144,7 +146,9 @@ func run(ctx context.Context, env Env, cfg config.Config) int {
 		select {
 		case <-ctx.Done():
 			sc, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			hs.Shutdown(sc)
+			if hs.Shutdown(sc) != nil {
+				hs.Close() // connections still busy after the grace period are cut
+			}
 			cancel()
 			return 0
 		case <-tk.C():

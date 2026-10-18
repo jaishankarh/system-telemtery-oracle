@@ -27,12 +27,23 @@ type liveFeed struct {
 	mu      sync.Mutex
 	clients map[chan []byte]struct{}
 	encodes atomic.Int64
+	done    chan struct{} // closed when the program shuts down, ending every stream
+	closeMu sync.Once
 }
+
+// MaxStreams caps connected Live streams: each holds a goroutine and a buffer.
+const MaxStreams = 16
+
+// CloseStreams ends every open Live stream; the program calls it as it shuts
+// down (http.Server.Shutdown does not wait for, or cancel, a long-lived stream).
+func (s *Server) CloseStreams() { s.live.closeMu.Do(func() { close(s.live.done) }) }
 
 // Shed trims the Live buffer to its newest minute (selfguard calls it near the memory cap).
 func (s *Server) Shed() { s.live.buf.Shed(time.Minute) }
 
-func newLiveFeed() *liveFeed { return &liveFeed{clients: map[chan []byte]struct{}{}} }
+func newLiveFeed() *liveFeed {
+	return &liveFeed{clients: map[chan []byte]struct{}{}, done: make(chan struct{})}
+}
 
 func (f *liveFeed) publish(s collector.Sample, apps []grouping.Application) {
 	p := live.NewPoint(s, apps)
@@ -55,11 +66,15 @@ func (f *liveFeed) publish(s collector.Sample, apps []grouping.Application) {
 	}
 }
 
+// subscribe returns nil when MaxStreams are already connected.
 func (f *liveFeed) subscribe() chan []byte {
 	c := make(chan []byte, 4)
 	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.clients) >= MaxStreams {
+		return nil
+	}
 	f.clients[c] = struct{}{}
-	f.mu.Unlock()
 	return c
 }
 
@@ -89,12 +104,18 @@ func (s *Server) registerLive(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-store")
 		c := s.live.subscribe()
+		if c == nil {
+			http.Error(w, "too many open streams", http.StatusServiceUnavailable)
+			return
+		}
 		defer s.live.unsubscribe(c)
 		fmt.Fprint(w, "retry: 2000\n\n")
 		fl.Flush()
 		for {
 			select {
 			case <-r.Context().Done():
+				return
+			case <-s.live.done:
 				return
 			case b := <-c:
 				fmt.Fprintf(w, "data: %s\n\n", b)

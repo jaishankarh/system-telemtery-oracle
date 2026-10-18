@@ -243,3 +243,38 @@ func TestGraphsViewIsEmbedded(t *testing.T) {
 		}
 	}
 }
+
+func TestStoppingTheProgramEndsOpenStreamsPromptly(t *testing.T) {
+	m := harness.New(t, "dev-box-applications")
+	p := m.Start()
+	s := connect(t, p)
+	defer s.resp.Body.Close()
+	p.Stop()
+	ended := make(chan struct{})
+	go func() {
+		for s.body.Scan() {
+		}
+		close(ended)
+	}()
+	select {
+	case <-ended:
+	case <-time.After(3 * time.Second):
+		t.Fatal("an open Live stream outlived the program's shutdown")
+	}
+}
+
+func TestTooManyLiveStreamsAreRefused(t *testing.T) {
+	m := harness.New(t, "dev-box-applications")
+	p := m.Start()
+	for i := 0; i < 16; i++ {
+		defer connect(t, p).resp.Body.Close()
+	}
+	resp, err := http.Get("http://" + p.Addr + "/api/live/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("17th stream = %d, want 503", resp.StatusCode)
+	}
+}
