@@ -38,6 +38,9 @@
 // /api/live/stream (SSE), /api/live/stats (see internal/server/live.go); tests in
 // internal/server/live_test.go show how to open a stream.
 //
+// GPUs: m.GPU.Set(gpu.Device{...}) puts NVIDIA GPUs on the machine (the fake NVML
+// reader); AMD/Intel GPUs are sysfs files, e.g. m.WriteFile("/sys/class/drm/card0/device/vendor", "0x1002\n").
+//
 // Machine.Root is a temp dir, so config files live at e.g. m.WriteFile("/etc/sys-telemetry-app/config.toml", ...).
 // Later tickets add fixtures under testdata/fixtures and helpers here (fake
 // container sockets, fake GPU reader) as new fields on Machine.
@@ -67,6 +70,8 @@ type Machine struct {
 	Clock *FakeClock
 	// Host records what the program would change (OOM score, systemd unit); nothing is really written.
 	Host *FakeHost
+	// GPU is the fake NVIDIA reader (NVML); set GPU.Devices to put NVIDIA GPUs on the machine.
+	GPU *FakeGPU
 }
 
 // New creates a fake machine from testdata/fixtures/<fixture>.
@@ -103,11 +108,11 @@ func New(t *testing.T, fixture string) *Machine {
 	if err := os.MkdirAll(filepath.Join(root, "state"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost()}
+	return &Machine{t: t, Root: root, Clock: NewFakeClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)), Host: NewFakeHost(), GPU: &FakeGPU{}}
 }
 
 func (m *Machine) machine() machine.Machine {
-	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host}
+	return machine.Machine{Root: m.Root, Clock: m.Clock, StateDir: filepath.Join(m.Root, "state"), Host: m.Host, GPU: m.GPU}
 }
 
 // WriteFile creates or replaces a file at an absolute system path.

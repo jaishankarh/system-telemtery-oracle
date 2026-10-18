@@ -5,7 +5,11 @@
 // the Sample nil and is listed in Sample.Missing.
 package collector
 
-import "time"
+import (
+	"time"
+
+	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
+)
 
 // Collector produces one Sample per call. Rates are derived from the previous
 // call, so they are nil on the first sample.
@@ -23,6 +27,8 @@ type Sample struct {
 	// Pressure (PSI) and Disks: see pressure.go. Pressure is nil without /proc/pressure.
 	Pressure *Pressure `json:"pressure"`
 	Disks    []Disk    `json:"disks"`
+	// GPUs is absent (omitted) on a machine without a GPU: see gpu.go.
+	GPUs []gpu.Device `json:"gpus,omitempty"`
 
 	// Processes is served by /api/processes, not inside /api/system.
 	Processes []Process `json:"-"`

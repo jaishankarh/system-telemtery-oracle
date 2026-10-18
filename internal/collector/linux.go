@@ -66,6 +66,8 @@ func (l *Linux) Collect() (Sample, error) {
 		}
 	}
 
+	s.GPUs = l.readGPUs()
+
 	if b, err := l.m.ReadFile("/proc/vmstat"); err != nil {
 		missing("/proc/vmstat")
 	} else {

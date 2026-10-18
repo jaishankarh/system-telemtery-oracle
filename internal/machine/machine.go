@@ -6,6 +6,7 @@
 package machine
 
 import (
+	"github.com/jaishankarh/system-telemtery-oracle/internal/gpu"
 	"os"
 	"path/filepath"
 	"time"
@@ -35,11 +36,13 @@ type Machine struct {
 	StateDir string
 	// Host is what the program may change (its own OOM score and systemd unit).
 	Host Host
+	// GPU reads NVIDIA GPUs (NVML). AMD and Intel GPUs come from sysfs under Root.
+	GPU gpu.Reader
 }
 
 // Real returns the Machine backed by the actual system.
 func Real() Machine {
-	return Machine{Root: "/", Clock: realClock{}, StateDir: "/var/lib/sys-telemetry-app", Host: realHost{}}
+	return Machine{Root: "/", Clock: realClock{}, StateDir: "/var/lib/sys-telemetry-app", Host: realHost{}, GPU: gpu.NewNVML()}
 }
 
 // Path maps an absolute system path such as "/proc/meminfo" under Root.

@@ -54,6 +54,12 @@ type Point struct {
 	SwapInPages  *float64 `json:"swap_in_pages_per_sec"`
 	SwapOutPages *float64 `json:"swap_out_pages_per_sec"`
 
+	// GPU: the busiest and hottest GPU, VRAM summed over all GPUs; nil without a GPU.
+	GPUUtil      *float64 `json:"gpu_util_percent"`
+	GPUTemp      *float64 `json:"gpu_temperature_celsius"`
+	GPUVRAMUsed  *uint64  `json:"gpu_vram_used_bytes"`
+	GPUVRAMTotal *uint64  `json:"gpu_vram_total_bytes"`
+
 	TopApps []AppSplit `json:"top_apps"`
 }
 
@@ -84,6 +90,23 @@ func NewPoint(s collector.Sample, apps []grouping.Application) Point {
 		}
 		if d.Write != nil {
 			p.DiskWrite = add(p.DiskWrite, *d.Write)
+		}
+	}
+	for _, g := range s.GPUs {
+		if g.UtilPercent != nil && (p.GPUUtil == nil || *g.UtilPercent > *p.GPUUtil) {
+			v := *g.UtilPercent
+			p.GPUUtil = &v
+		}
+		if g.TempC != nil && (p.GPUTemp == nil || *g.TempC > *p.GPUTemp) {
+			v := *g.TempC
+			p.GPUTemp = &v
+		}
+		if g.VRAMUsedBytes != nil && g.VRAMTotalBytes != nil {
+			u, t := *g.VRAMUsedBytes, *g.VRAMTotalBytes
+			if p.GPUVRAMUsed != nil {
+				u, t = u+*p.GPUVRAMUsed, t+*p.GPUVRAMTotal
+			}
+			p.GPUVRAMUsed, p.GPUVRAMTotal = &u, &t
 		}
 	}
 	for _, a := range apps {

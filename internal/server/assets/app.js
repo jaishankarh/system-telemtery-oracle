@@ -18,6 +18,10 @@ async function refresh() {
       swapLine("Disk Swap", w.disk), swapLine("Compressed Swap", w.compressed),
       `in ${w.in_pages_per_sec == null ? "n/a" : w.in_pages_per_sec.toFixed(0)} pages/s  out ${w.out_pages_per_sec == null ? "n/a" : w.out_pages_per_sec.toFixed(0)} pages/s`,
     ].join("\n");
+    const gs = s.gpus || [];
+    document.getElementById("gpu-section").hidden = gs.length === 0;
+    document.getElementById("gpu").textContent = gs.map(g =>
+      `${g.name} (${g.vendor})  util ${g.util_percent == null ? "n/a" : g.util_percent.toFixed(0) + "%"}  temp ${g.temperature_celsius == null ? "n/a" : g.temperature_celsius.toFixed(0) + " C"}  VRAM ${g.vram_total_bytes == null ? "n/a" : gib(g.vram_used_bytes) + " of " + gib(g.vram_total_bytes)}`).join("\n");
   } catch (e) {
     document.getElementById("status").textContent = "disconnected";
   }
