@@ -4,6 +4,16 @@ Run on your Ubuntu laptop, as root, from a checkout of `integration/phase-1`. On
 
 Setup once: `sudo apt-get install -y golang-go make` if needed, then `make build`.
 
+## Ticket 12: Advisor and Hardware Limit
+
+- [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`. `curl -s 127.0.0.1:9191/api/advice | python3 -m json.tool` returns `window_seconds: 300`, `advice: []`, `pending`, and `disabled`. `disabled` is empty if your kernel has `/proc/pressure/memory`, `/proc/vmstat` and (when you have both zram and a swap file) `/sys/block/zram0/stat`; otherwise it lists the Hardware Limit rule with a one-line reason
+- [ ] On a normal day (no memory trouble) there is no Advice; the dashboard at http://127.0.0.1:9191 shows an Advice panel at the very top reading "No active Advice."
+- [ ] Hardware Limit must not fire on a short spike: run `stress-ng --vm 2 --vm-bytes 90% --timeout 60s`; `/api/advice` may show a `pending` entry during the run but never an entry in `advice`, and `pending` empties afterwards
+- [ ] To see a real verdict without buying RAM, use a short window: write `/etc/sys-telemetry-app/config.toml` with `advisor_window = "20s"` and `advisor_working_set_percent = 20`, `advisor_psi_percent = 1`, `advisor_thrash_pages_per_sec = 5`, restart, then run `stress-ng --vm 4 --vm-bytes 110% --timeout 120s`. Expect a critical or warning Hardware Limit in the panel with Working Set, installed RAM, Memory Deficit and "would cover it" sizes; compare Working Set with `free` plus swap in use, and that `swap_attribution` evidence matches your setup. Remove the config afterwards
+- [ ] `curl -s 127.0.0.1:9191/api/advice/events` shows `advice_started` and, after the stress ends, `advice_ended`
+- [ ] `sudo ./dist/sys-telemetry-app-linux-amd64 report` (with the instance above running) prints an "Advice" section from the running instance; with it stopped, it says it cannot verify the Sustained window and lists current conditions and disabled rules
+- [ ] Swap attribution on a machine with both zram and a swap file: `cat /sys/block/zram0/stat` counters increase when swapping, and `disk_swap_in/out` in the evidence is what is left after subtracting them from `grep -E 'pswp(in|out)' /proc/vmstat`
+
 ## Ticket 18: Self-guard and systemd install
 
 - [ ] `make build`, then `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 9191`; in another shell `cat /proc/$(pgrep -f 'sys-telemetry-app.*run' | head -1)/oom_score_adj` prints `-1000`
