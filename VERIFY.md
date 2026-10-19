@@ -249,3 +249,20 @@ AMD / Intel (only if you have such a machine or an iGPU):
 No GPU / no driver:
 - [ ] On a machine without a GPU (a VM or server): the binary starts, `/api/system` has no `gpus` key, the dashboard has no GPU section or charts, `report` has no GPU line, stderr has no GPU errors
 - [ ] `SYS_TELEMETRY_VARIANT=nvml` with install.sh (after a release) installs the nvml build; without it the static one
+
+## Review fixes (branch fix/review): real-machine checks
+
+Build: `make build` (or `make build-nvml`), then run as root: `sudo ./dist/sys-telemetry-app-linux-amd64 run`.
+Let it run long enough for a full 24 h ring if you can (otherwise copy an old `history.ring` of full size into the state dir while stopped).
+
+- [ ] Slider memory: with a full ring, drag the dashboard time slider back and forth for a minute while watching `curl -s 127.0.0.1:PORT/api/self | jq .rss_bytes` (or `systemctl status sys-telemetry-app` Memory:). RSS stays well under 64 MiB, the unit is never OOM-killed (`journalctl -u sys-telemetry-app | grep -i oom` is empty), and each `curl -s -o /dev/null -w '%{time_total}\n' '127.0.0.1:PORT/api/history/at?time=<RFC3339>'` takes well under a second.
+- [ ] `curl -s 127.0.0.1:PORT/api/history/span | jq '.oldest,.newest'` spans about 24 h.
+- [ ] Docker stall: with Docker running, `sudo systemctl stop docker.socket docker` then `sudo kill -STOP $(pidof dockerd)` (if you can), sample timestamps in `/api/system` keep advancing every interval. `kill -CONT` afterwards, and containers appear again within ~15 s.
+- [ ] Container names still show up in `/api/applications` shortly after start and after starting a new container (within ~15 s).
+- [ ] Second instance: while the first runs, start another `sudo ./dist/sys-telemetry-app-linux-amd64 run --port 0`. It prints a warning that another instance owns History, still serves its dashboard, `/var/lib/sys-telemetry-app/instance.addr` still holds the first instance's address, and `replay` still works.
+- [ ] Host check: `curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: evil.example.com' 127.0.0.1:PORT/api/processes` prints 403; without the header it prints 200.
+- [ ] Corrupt ring: stop the program, `head -c 100 /dev/urandom | sudo tee /var/lib/sys-telemetry-app/history.ring`, start it: a warning names `history.ring.corrupt`, History records again, the old file is kept.
+- [ ] Perms: `stat -c '%a %n' /var/lib/sys-telemetry-app /var/lib/sys-telemetry-app/*` shows 700 for the dir and 600 for every file (state.json after hiding any Advice).
+- [ ] Near the cap: under systemd with `MemoryMax=64M`, `curl 127.0.0.1:PORT/api/self | jq .shed_count` stays 0 in normal use; if it rises, `journalctl -u sys-telemetry-app` shows "shed caches" lines and the program keeps running.
+- [ ] Stop: `sudo systemctl stop sys-telemetry-app` with the dashboard open in a browser returns within about 2 s.
+- [ ] Swappiness Settings Fix (when it fires) now shows both `vm.swappiness = 10` and `vm.vfs_cache_pressure = 50`.
