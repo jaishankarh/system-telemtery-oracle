@@ -47,7 +47,7 @@ Advice that a memory or CPU problem can be solved by changing configuration, wit
 _Avoid_: tweak, optimization
 
 **Hardware Limit**:
-Advice that the machine needs more physical RAM, because the Working Set does not fit even with sensible settings.
+Advice that the machine needs more physical RAM, because the Working Set does not fit even with sensible settings. Includes the kernel's OOM killer actually firing: a Hardware Limit condition's strongest possible evidence, and (rule `oom-kill`) reported in its own right even when the broader Working-Set-vs-RAM condition is not Sustained, for example a container killed only by its own cgroup limit.
 _Avoid_: hardware bottleneck, upgrade warning
 
 **Working Set**:

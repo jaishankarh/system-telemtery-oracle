@@ -89,7 +89,7 @@ func (in *Input) TopApps(n int) []AppRef {
 
 // DefaultRules lists every rule. Tickets #13-#17 add theirs here.
 func DefaultRules() []Rule {
-	return []Rule{HardwareLimitRule{}, SwappinessRule{}, CompressedSwapThrashingRule{}, SwapWearRule{}, EditorWatcherRule{}, BrowserSprawlRule{}, UncappedContainerRule{}}
+	return []Rule{HardwareLimitRule{}, SwappinessRule{}, CompressedSwapThrashingRule{}, SwapWearRule{}, EditorWatcherRule{}, BrowserSprawlRule{}, UncappedContainerRule{}, &OOMKillRule{}}
 }
 
 func fnum(name string, v float64, unit string) Fact { return Fact{Name: name, Value: &v, Unit: unit} }

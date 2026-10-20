@@ -79,6 +79,15 @@ func (HardwareLimitRule) Check(in *Input) []Finding {
 	if in.PSI.HasFull {
 		facts = append(facts, fnum("memory_pressure_full_avg10", in.PSI.FullAvg10, "percent"))
 	}
+	// The kernel's own OOM killer firing right now is direct confirmation of
+	// this finding, not just a prediction from pressure and Working Set: name
+	// what it just killed.
+	if in.Sample.OOMKills != nil && *in.Sample.OOMKills > 0 {
+		facts = append(facts, fnum("oom_kills_this_sample", float64(*in.Sample.OOMKills), "count"))
+		for _, v := range in.Sample.OOMVictims {
+			facts = append(facts, Fact{Name: "oom_killed_process", Text: oomVictimText(v)})
+		}
+	}
 	ramLabel := installedGB(ram)
 	wsGB := float64(ws) / gib
 	sizes := coveringSizes(wsGB, ramLabel)

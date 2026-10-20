@@ -82,6 +82,15 @@ function seriesData(chart) {
   }))];
 }
 function textColor() { return getComputedStyle(document.body).color; }
+// uPlot only fills in legend values when the cursor has an active position
+// (normally set by hovering the chart); left alone, every legend value shows
+// "--" even though the series has data. Pin the cursor to the right edge
+// (the latest sample) after every data load so the legend always reads the
+// current value without the user needing to hover.
+function pinLegendToLast(u, xs) {
+  if (!xs.length) return;
+  u.setCursor({ left: u.valToPos(xs[xs.length - 1], "x"), top: -1 });
+}
 function buildCharts() {
   const host = document.getElementById("graph-grid");
   host.replaceChildren();
@@ -103,6 +112,7 @@ function buildCharts() {
       series: [{}, ...c.series.map(s => ({ label: s.label, stroke: s.color, width: 1.5, spanGaps: false }))],
       plugins: c.id === "swapio" ? [markerPlugin()] : [],
     }, seriesData(c), plot);
+    pinLegendToLast(u, seriesData(c)[0]);
     return { c, box, u, plot };
   });
 }
@@ -115,7 +125,9 @@ function render() {
     if (ch.box.hidden) continue;
     const w = Math.max(ch.box.clientWidth, 260);
     if (ch.u.width !== w) ch.u.setSize({ width: w, height: 140 });
-    ch.u.setData(seriesData(ch.c));
+    const d = seriesData(ch.c);
+    ch.u.setData(d);
+    pinLegendToLast(ch.u, d[0]);
   }
   renderSplit();
 }

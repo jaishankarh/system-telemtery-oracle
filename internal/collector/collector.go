@@ -32,12 +32,31 @@ type Sample struct {
 	Disks    []Disk    `json:"disks"`
 	// GPUs is absent (omitted) on a machine without a GPU: see gpu.go.
 	GPUs []gpu.Device `json:"gpus,omitempty"`
+	// OOMKills is how many times the kernel's OOM killer fired since the
+	// previous sample. Nil means unknown (first sample, or this kernel's
+	// /proc/vmstat has no oom_kill counter: see availability "oom_kill_count").
+	// Zero means known and none fired.
+	OOMKills *uint64 `json:"oom_kills,omitempty"`
+	// OOMVictims are processes present in the previous sample and gone in this
+	// one, set only when OOMKills is positive: the most likely-killed
+	// processes by last-known PSS+swap, largest first, capped (process.go).
+	OOMVictims []OOMVictim `json:"oom_victims,omitempty"`
 
 	// Processes is served by /api/processes, not inside /api/system.
 	Processes []Process `json:"-"`
 	// ProcessMissing lists per-process sources the kernel lacks (ADR 0006),
 	// with the PID replaced by the literal "PID".
 	ProcessMissing []string `json:"-"`
+}
+
+// OOMVictim is a process that disappeared between two samples while the OOM
+// killer fired. PSS and swap are its last known reading (nil when the process
+// exited before its memory detail was ever read).
+type OOMVictim struct {
+	PID       int     `json:"pid"`
+	Name      string  `json:"name"`
+	PSSBytes  *uint64 `json:"pss_bytes"`
+	SwapBytes *uint64 `json:"swap_bytes"`
 }
 
 // CPU is total utilisation and load.

@@ -11,6 +11,13 @@ import (
 	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
 )
 
+func init() {
+	availability.Describe("oom_kill_count", availability.Item{
+		Feature: "Kernel out-of-memory kill count", Reason: "/proc/vmstat has no oom_kill counter (needs Linux 5.12 or newer)",
+		Affects: []string{"Advice: oom-kill", "Hardware Limit evidence"},
+	})
+}
+
 func contains(l []string, v string) bool {
 	for _, x := range l {
 		if x == v {
@@ -34,6 +41,8 @@ type prevReading struct {
 	haveCPU           bool
 	pswpin, pswpout   uint64
 	haveVmstat        bool
+	oomKill           uint64
+	haveOOMKill       bool
 }
 
 // NewLinux returns the Linux Collector.
@@ -78,15 +87,24 @@ func (l *Linux) Collect() (Sample, error) {
 
 	s.GPUs = l.readGPUs()
 
+	oomUnknown := true
 	if b, err := l.m.ReadFile("/proc/vmstat"); err != nil {
 		missing("/proc/vmstat")
 	} else {
-		in, out, ok := parseVmstat(b)
-		if ok {
-			cur.pswpin, cur.pswpout, cur.haveVmstat = in, out, true
-			if l.prev != nil && l.prev.haveVmstat && dt > 0 && in >= l.prev.pswpin && out >= l.prev.pswpout {
-				a, c := float64(in-l.prev.pswpin)/dt, float64(out-l.prev.pswpout)/dt
+		vs := parseVmstat(b)
+		if vs.haveSwap {
+			cur.pswpin, cur.pswpout, cur.haveVmstat = vs.pswpin, vs.pswpout, true
+			if l.prev != nil && l.prev.haveVmstat && dt > 0 && vs.pswpin >= l.prev.pswpin && vs.pswpout >= l.prev.pswpout {
+				a, c := float64(vs.pswpin-l.prev.pswpin)/dt, float64(vs.pswpout-l.prev.pswpout)/dt
 				s.Swap.InPagesPerSec, s.Swap.OutPagesPerSec = &a, &c
+			}
+		}
+		if vs.haveOOMKill {
+			oomUnknown = false
+			cur.oomKill, cur.haveOOMKill = vs.oomKill, true
+			if l.prev != nil && l.prev.haveOOMKill && vs.oomKill >= l.prev.oomKill {
+				d := vs.oomKill - l.prev.oomKill
+				s.OOMKills = &d
 			}
 		}
 	}
@@ -107,6 +125,9 @@ func (l *Linux) Collect() (Sample, error) {
 	in := availability.Inputs{Missing: append(append([]string{}, s.Missing...), s.ProcessMissing...)}
 	if !contains(s.Missing, "/proc/swaps") && s.Swap.Disk == nil {
 		in.Absent = append(in.Absent, "disk_swap")
+	}
+	if !contains(s.Missing, "/proc/vmstat") && oomUnknown {
+		in.Absent = append(in.Absent, "oom_kill_count")
 	}
 	s.Availability = availability.Build(l.m, in)
 	l.prev = cur
@@ -176,7 +197,19 @@ func parseStat(b []byte) (cores int, total, idle uint64, ok bool) {
 	return
 }
 
-func parseVmstat(b []byte) (in, out uint64, ok bool) {
+// vmstatCounters are the cumulative kernel counters read from /proc/vmstat.
+// Each pair of fields has its own "have" flag: pswpin/pswpout exist on every
+// kernel this program targets, but oom_kill is newer (Linux 5.12+) and is
+// absent on an older kernel even though the rest of the file reads fine.
+type vmstatCounters struct {
+	pswpin, pswpout uint64
+	haveSwap        bool
+	oomKill         uint64
+	haveOOMKill     bool
+}
+
+func parseVmstat(b []byte) vmstatCounters {
+	var vs vmstatCounters
 	var gi, go_ bool
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
@@ -186,14 +219,18 @@ func parseVmstat(b []byte) (in, out uint64, ok bool) {
 		}
 		switch f[0] {
 		case "pswpin":
-			in, _ = strconv.ParseUint(f[1], 10, 64)
+			vs.pswpin, _ = strconv.ParseUint(f[1], 10, 64)
 			gi = true
 		case "pswpout":
-			out, _ = strconv.ParseUint(f[1], 10, 64)
+			vs.pswpout, _ = strconv.ParseUint(f[1], 10, 64)
 			go_ = true
+		case "oom_kill":
+			vs.oomKill, _ = strconv.ParseUint(f[1], 10, 64)
+			vs.haveOOMKill = true
 		}
 	}
-	return in, out, gi && go_
+	vs.haveSwap = gi && go_
+	return vs
 }
 
 // parseSwaps splits /proc/swaps into Disk Swap and Compressed Swap (zram).

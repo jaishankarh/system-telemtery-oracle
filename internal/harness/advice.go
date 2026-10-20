@@ -24,6 +24,13 @@ func (m *Machine) AddSwapActivity(pagesIn, pagesOut uint64) {
 	m.bumpVmstat(map[string]uint64{"pswpin": pagesIn, "pswpout": pagesOut})
 }
 
+// AddOOMKill bumps the oom_kill counter in /proc/vmstat by n, as the kernel
+// does each time its OOM killer fires.
+func (m *Machine) AddOOMKill(n uint64) {
+	m.t.Helper()
+	m.bumpVmstat(map[string]uint64{"oom_kill": n})
+}
+
 // AddZramActivity adds swap-in/out pages to /sys/block/<dev>/stat (read and
 // write sectors). The system-wide counters are NOT changed; use AddSwapActivity too.
 func (m *Machine) AddZramActivity(dev string, pagesIn, pagesOut uint64) {

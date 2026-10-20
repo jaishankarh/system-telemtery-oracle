@@ -48,6 +48,35 @@ async function refresh() {
 refresh();
 setInterval(refresh, 2000);
 
+// Collapsible panels (Advice, Applications, Processes): state persists per
+// browser via localStorage, which can throw or be unavailable (private
+// windows, cleared site data), so every access is guarded (ADR 0006 applies
+// to the UI too: a storage failure must not break the toggle).
+function storedCollapsed(id) {
+  try { return localStorage.getItem("collapsed:" + id) === "1"; } catch (e) { return false; }
+}
+function storeCollapsed(id, collapsed) {
+  try { localStorage.setItem("collapsed:" + id, collapsed ? "1" : "0"); } catch (e) { /* best effort */ }
+}
+["advice", "applications", "processes"].forEach(id => {
+  const section = document.getElementById(id);
+  const btn = document.getElementById(id + "-toggle");
+  const name = id.charAt(0).toUpperCase() + id.slice(1);
+  let collapsed = storedCollapsed(id);
+  const apply = () => {
+    section.classList.toggle("collapsed", collapsed);
+    btn.textContent = collapsed ? "+" : "−";
+    btn.setAttribute("aria-expanded", String(!collapsed));
+    btn.setAttribute("aria-label", (collapsed ? "Expand " : "Collapse ") + name);
+  };
+  apply();
+  btn.addEventListener("click", () => {
+    collapsed = !collapsed;
+    storeCollapsed(id, collapsed);
+    apply();
+  });
+});
+
 // Processes view: sorting and filtering are done by /api/processes.
 const COLUMNS = [
   ["pid", "PID", "text"], ["user", "User", "text"], ["name", "Name", "text"],

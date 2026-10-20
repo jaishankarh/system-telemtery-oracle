@@ -56,6 +56,9 @@ type procPrev struct {
 	// noRollup remembers that smaps_rollup does not exist, so the source stays
 	// listed as missing on samples that do not re-read memory detail.
 	noRollup bool
+	// name is kept so a process that exits between samples can still be named
+	// as a possible OOM-kill victim (oomVictims, below).
+	name string
 }
 
 type procState struct {
@@ -68,28 +71,66 @@ func (l *Linux) collectProcesses(now time.Time, s *Sample) {
 		return // /proc/meminfo etc. already report a missing /proc
 	}
 	users := l.loadUsers()
-	next := make(map[int]*procPrev, len(names))
 	if l.proc.prev == nil {
 		l.proc.prev = map[int]*procPrev{}
 	}
+	prev := l.proc.prev
+	next := make(map[int]*procPrev, len(names))
 	miss := map[string]bool{}
 	for _, n := range names {
 		pid, err := strconv.Atoi(n)
 		if err != nil || pid <= 0 {
 			continue
 		}
-		p, st, ok := l.readProcess(pid, now, users, l.proc.prev[pid], miss)
+		p, st, ok := l.readProcess(pid, now, users, prev[pid], miss)
 		if !ok {
 			continue // exited while we were looking
 		}
 		next[pid] = st
 		s.Processes = append(s.Processes, p)
 	}
+	if s.OOMKills != nil && *s.OOMKills > 0 {
+		s.OOMVictims = oomVictims(prev, next)
+	}
 	l.proc.prev = next
 	for k := range miss {
 		s.ProcessMissing = append(s.ProcessMissing, k)
 	}
 	sort.Strings(s.ProcessMissing)
+}
+
+// maxOOMVictims bounds how many exited processes are named as possible OOM
+// kills, so one noisy sample cannot make the finding unreadable.
+const maxOOMVictims = 5
+
+// oomVictims names the processes most likely killed by the OOM killer: present
+// in prev, gone from next, ranked by last-known PSS + swap (largest first). A
+// process whose memory was never read (no PSS) is skipped: there is nothing to
+// rank it by or show, and most are short-lived helpers, not OOM targets.
+func oomVictims(prev, next map[int]*procPrev) []OOMVictim {
+	var out []OOMVictim
+	for pid, p := range prev {
+		if _, alive := next[pid]; alive || p.pss == nil {
+			continue
+		}
+		out = append(out, OOMVictim{PID: pid, Name: p.name, PSSBytes: p.pss, SwapBytes: p.swap})
+	}
+	sort.Slice(out, func(i, j int) bool { return oomVictimWeight(out[i]) > oomVictimWeight(out[j]) })
+	if len(out) > maxOOMVictims {
+		out = out[:maxOOMVictims]
+	}
+	return out
+}
+
+func oomVictimWeight(v OOMVictim) uint64 {
+	var w uint64
+	if v.PSSBytes != nil {
+		w += *v.PSSBytes
+	}
+	if v.SwapBytes != nil {
+		w += *v.SwapBytes
+	}
+	return w
 }
 
 func (l *Linux) readProcess(pid int, now time.Time, users map[string]string, old *procPrev, miss map[string]bool) (Process, *procPrev, bool) {
@@ -103,7 +144,7 @@ func (l *Linux) readProcess(pid int, now time.Time, users map[string]string, old
 		return Process{}, nil, false
 	}
 	p := Process{PID: pid, Name: comm, Threads: threads}
-	st := &procPrev{start: start, ticks: ticks}
+	st := &procPrev{start: start, ticks: ticks, name: comm}
 	if old != nil && old.start != start {
 		old = nil // PID reused by a different process
 	}

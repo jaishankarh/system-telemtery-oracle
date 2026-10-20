@@ -50,3 +50,8 @@ td.cmd-full { white-space: pre-wrap; word-break: break-all; }
 #marker-list { margin: 2px 0 6px; padding-left: 18px; font-size: 12px; }
 #advice-note { font-size: 12px; opacity: .85; }
 body.replaying #timebar { border-bottom-color: #e08a00; }
+
+.collapsible h2 { display: flex; align-items: center; gap: 6px; }
+.collapse-toggle { margin-left: auto; width: 24px; height: 24px; line-height: 1; border: 1px solid rgba(128,128,128,.4); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font-size: 14px; }
+.collapse-toggle:hover { background: rgba(128,128,128,.15); }
+.collapsible.collapsed > :not(h2) { display: none; }
