@@ -1,0 +1,287 @@
+package collector
+
+import (
+	"bufio"
+	"bytes"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/jaishankarh/system-telemtery-oracle/internal/availability"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/machine"
+)
+
+func init() {
+	availability.Describe("oom_kill_count", availability.Item{
+		Feature: "Kernel out-of-memory kill count", Reason: "/proc/vmstat has no oom_kill counter (needs Linux 5.12 or newer)",
+		Affects: []string{"Advice: oom-kill", "Hardware Limit evidence"},
+	})
+}
+
+func contains(l []string, v string) bool {
+	for _, x := range l {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// Linux reads /proc and /sys through a Machine.
+type Linux struct {
+	m    machine.Machine
+	prev *prevReading
+	proc procState
+	ps   pressureState // pressure.go
+}
+
+type prevReading struct {
+	at                int64
+	cpuTotal, cpuIdle uint64
+	haveCPU           bool
+	pswpin, pswpout   uint64
+	haveVmstat        bool
+	oomKill           uint64
+	haveOOMKill       bool
+}
+
+// NewLinux returns the Linux Collector.
+func NewLinux(m machine.Machine) *Linux { return &Linux{m: m} }
+
+// Collect implements Collector.
+func (l *Linux) Collect() (Sample, error) {
+	now := l.m.Clock.Now()
+	s := Sample{Time: now, Missing: []string{}}
+	missing := func(p string) { s.Missing = append(s.Missing, p) }
+	cur := &prevReading{at: now.UnixNano()}
+	var dt float64
+	if l.prev != nil {
+		dt = float64(cur.at-l.prev.at) / 1e9
+	}
+
+	if b, err := l.m.ReadFile("/proc/meminfo"); err != nil {
+		missing("/proc/meminfo")
+	} else {
+		s.Memory = parseMeminfo(b)
+	}
+
+	if b, err := l.m.ReadFile("/proc/loadavg"); err != nil {
+		missing("/proc/loadavg")
+	} else if f := strings.Fields(string(b)); len(f) >= 3 {
+		s.CPU.Load1, s.CPU.Load5, s.CPU.Load15 = pf(f[0]), pf(f[1]), pf(f[2])
+	}
+
+	if b, err := l.m.ReadFile("/proc/stat"); err != nil {
+		missing("/proc/stat")
+	} else {
+		cores, total, idle, ok := parseStat(b)
+		s.CPU.Cores = cores
+		if ok {
+			cur.cpuTotal, cur.cpuIdle, cur.haveCPU = total, idle, true
+			if l.prev != nil && l.prev.haveCPU && total > l.prev.cpuTotal && idle >= l.prev.cpuIdle {
+				v := 100 * (1 - float64(idle-l.prev.cpuIdle)/float64(total-l.prev.cpuTotal))
+				s.CPU.TotalPercent = &v
+			}
+		}
+	}
+
+	s.GPUs = l.readGPUs()
+
+	oomUnknown := true
+	if b, err := l.m.ReadFile("/proc/vmstat"); err != nil {
+		missing("/proc/vmstat")
+	} else {
+		vs := parseVmstat(b)
+		if vs.haveSwap {
+			cur.pswpin, cur.pswpout, cur.haveVmstat = vs.pswpin, vs.pswpout, true
+			if l.prev != nil && l.prev.haveVmstat && dt > 0 && vs.pswpin >= l.prev.pswpin && vs.pswpout >= l.prev.pswpout {
+				a, c := float64(vs.pswpin-l.prev.pswpin)/dt, float64(vs.pswpout-l.prev.pswpout)/dt
+				s.Swap.InPagesPerSec, s.Swap.OutPagesPerSec = &a, &c
+			}
+		}
+		if vs.haveOOMKill {
+			oomUnknown = false
+			cur.oomKill, cur.haveOOMKill = vs.oomKill, true
+			if l.prev != nil && l.prev.haveOOMKill && vs.oomKill >= l.prev.oomKill {
+				d := vs.oomKill - l.prev.oomKill
+				s.OOMKills = &d
+			}
+		}
+	}
+
+	if b, err := l.m.ReadFile("/proc/swaps"); err != nil {
+		missing("/proc/swaps")
+	} else {
+		l.parseSwaps(b, &s.Swap)
+	}
+	if b, err := l.m.ReadFile("/sys/module/zswap/parameters/enabled"); err == nil {
+		v := strings.TrimSpace(string(b)) == "Y"
+		s.Swap.ZswapEnabled = &v
+	}
+
+	l.collectPressureAndDisks(now, &s)
+	l.collectProcesses(now, &s)
+	sort.Strings(s.Missing)
+	in := availability.Inputs{Missing: append(append([]string{}, s.Missing...), s.ProcessMissing...)}
+	if !contains(s.Missing, "/proc/swaps") && s.Swap.Disk == nil {
+		in.Absent = append(in.Absent, "disk_swap")
+	}
+	if !contains(s.Missing, "/proc/vmstat") && oomUnknown {
+		in.Absent = append(in.Absent, "oom_kill_count")
+	}
+	s.Availability = availability.Build(l.m, in)
+	l.prev = cur
+	return s, nil
+}
+
+func pf(v string) *float64 {
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return nil
+	}
+	return &f
+}
+
+func parseMeminfo(b []byte) *Memory {
+	kb := map[string]uint64{}
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		k, v, ok := strings.Cut(sc.Text(), ":")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(v)
+		if len(f) == 0 {
+			continue
+		}
+		n, err := strconv.ParseUint(f[0], 10, 64)
+		if err == nil {
+			kb[k] = n * 1024 // meminfo is in KiB
+		}
+	}
+	m := &Memory{TotalBytes: kb["MemTotal"], AvailableBytes: kb["MemAvailable"],
+		CachedBytes: kb["Cached"], BuffersBytes: kb["Buffers"], DirtyBytes: kb["Dirty"]}
+	if _, ok := kb["MemAvailable"]; !ok { // kernels before 3.14
+		m.AvailableBytes = kb["MemFree"] + kb["Buffers"] + kb["Cached"]
+	}
+	if m.TotalBytes >= m.AvailableBytes {
+		m.UsedBytes = m.TotalBytes - m.AvailableBytes
+	}
+	return m
+}
+
+func parseStat(b []byte) (cores int, total, idle uint64, ok bool) {
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		f := strings.Fields(sc.Text())
+		if len(f) == 0 {
+			continue
+		}
+		switch {
+		case f[0] == "cpu" && len(f) >= 5:
+			for i, v := range f[1:] {
+				n, err := strconv.ParseUint(v, 10, 64)
+				if err != nil || i >= 8 { // guest columns are already inside user/nice
+					continue
+				}
+				total += n
+				if i == 3 || i == 4 { // idle, iowait
+					idle += n
+				}
+			}
+			ok = true
+		case strings.HasPrefix(f[0], "cpu"):
+			cores++
+		}
+	}
+	return
+}
+
+// vmstatCounters are the cumulative kernel counters read from /proc/vmstat.
+// Each pair of fields has its own "have" flag: pswpin/pswpout exist on every
+// kernel this program targets, but oom_kill is newer (Linux 5.12+) and is
+// absent on an older kernel even though the rest of the file reads fine.
+type vmstatCounters struct {
+	pswpin, pswpout uint64
+	haveSwap        bool
+	oomKill         uint64
+	haveOOMKill     bool
+}
+
+func parseVmstat(b []byte) vmstatCounters {
+	var vs vmstatCounters
+	var gi, go_ bool
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		f := strings.Fields(sc.Text())
+		if len(f) != 2 {
+			continue
+		}
+		switch f[0] {
+		case "pswpin":
+			vs.pswpin, _ = strconv.ParseUint(f[1], 10, 64)
+			gi = true
+		case "pswpout":
+			vs.pswpout, _ = strconv.ParseUint(f[1], 10, 64)
+			go_ = true
+		case "oom_kill":
+			vs.oomKill, _ = strconv.ParseUint(f[1], 10, 64)
+			vs.haveOOMKill = true
+		}
+	}
+	vs.haveSwap = gi && go_
+	return vs
+}
+
+// parseSwaps splits /proc/swaps into Disk Swap and Compressed Swap (zram).
+func (l *Linux) parseSwaps(b []byte, sw *Swap) {
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	sc.Scan() // header
+	for sc.Scan() {
+		f := strings.Fields(sc.Text())
+		if len(f) < 4 {
+			continue
+		}
+		size, e1 := strconv.ParseUint(f[2], 10, 64)
+		used, e2 := strconv.ParseUint(f[3], 10, 64)
+		if e1 != nil || e2 != nil {
+			continue
+		}
+		space := SwapSpace{TotalBytes: size * 1024, UsedBytes: used * 1024}
+		if strings.HasPrefix(f[0], "/dev/zram") {
+			if sw.Compressed == nil {
+				sw.Compressed = &SwapSpace{}
+			}
+			sw.Compressed.TotalBytes += space.TotalBytes
+			sw.Compressed.UsedBytes += space.UsedBytes
+			if ram, ok := l.zramRAM(strings.TrimPrefix(f[0], "/dev/")); ok {
+				v := uint64(0)
+				if sw.Compressed.RAMUsedBytes != nil {
+					v = *sw.Compressed.RAMUsedBytes
+				}
+				v += ram
+				sw.Compressed.RAMUsedBytes = &v
+			}
+			continue
+		}
+		if sw.Disk == nil {
+			sw.Disk = &SwapSpace{}
+		}
+		sw.Disk.TotalBytes += space.TotalBytes
+		sw.Disk.UsedBytes += space.UsedBytes
+	}
+}
+
+// zramRAM returns mem_used_total (field 3 of mm_stat): RAM the device occupies.
+func (l *Linux) zramRAM(dev string) (uint64, bool) {
+	b, err := l.m.ReadFile("/sys/block/" + dev + "/mm_stat")
+	if err != nil {
+		return 0, false
+	}
+	f := strings.Fields(string(b))
+	if len(f) < 3 {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(f[2], 10, 64)
+	return n, err == nil
+}

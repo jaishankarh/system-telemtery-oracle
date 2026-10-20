@@ -1,0 +1,10 @@
+Name:	code
+Umask:	0022
+State:	S (sleeping)
+Tgid:	100
+Pid:	100
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+VmRSS:	  800000 kB
+VmSwap:	  120000 kB
+Threads:	40

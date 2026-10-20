@@ -1,0 +1,79 @@
+// Package server serves the JSON API and the embedded dashboard on 127.0.0.1.
+package server
+
+import (
+	"embed"
+	"encoding/json"
+	"io/fs"
+	"net/http"
+	"sync/atomic"
+	"time"
+
+	"github.com/jaishankarh/system-telemtery-oracle/internal/advisor"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/collector"
+	"github.com/jaishankarh/system-telemtery-oracle/internal/grouping"
+)
+
+//go:embed assets
+var assets embed.FS
+
+// Server holds the latest Sample and serves it.
+type Server struct {
+	latest   atomic.Pointer[collector.Sample]
+	apps     atomic.Pointer[[]grouping.Application] // grouped from latest, same moment
+	grouper  *grouping.Grouper
+	interval time.Duration
+	advisor  *advisor.Advisor
+	live     *liveFeed // live.go
+}
+
+// New creates a Server that reports the given sampling interval.
+func New(interval time.Duration, g *grouping.Grouper) *Server {
+	return &Server{interval: interval, grouper: g, live: newLiveFeed()}
+}
+
+// Update publishes a new latest Sample.
+func (s *Server) Update(sample collector.Sample) {
+	apps := s.grouper.Group(sample.Processes)
+	s.apps.Store(&apps)
+	if s.advisor != nil {
+		s.advisor.Observe(sample, apps) // before publishing, so a published sample implies Advice was evaluated
+	}
+	s.live.publish(sample, apps) // before latest, so a visible sample is already in the Live buffer
+	s.latest.Store(&sample)
+}
+
+// Handler returns the HTTP handler: /api/system, /api/info and the dashboard.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/system", func(w http.ResponseWriter, r *http.Request) {
+		if sm := s.latest.Load(); sm != nil {
+			writeJSON(w, sm)
+			return
+		}
+		http.Error(w, "no sample yet", http.StatusServiceUnavailable)
+	})
+	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"interval_seconds": s.interval.Seconds()})
+	})
+	mux.HandleFunc("/api/availability", func(w http.ResponseWriter, r *http.Request) {
+		if sm := s.latest.Load(); sm != nil {
+			writeJSON(w, sm.Availability) // what is unavailable and why (ADR 0006)
+			return
+		}
+		http.Error(w, "no sample yet", http.StatusServiceUnavailable)
+	})
+	mux.HandleFunc("/api/processes", s.processes)
+	mux.HandleFunc("/api/applications", s.applications)
+	s.adviceRoutes(mux)
+	s.registerLive(mux)
+	sub, _ := fs.Sub(assets, "assets")
+	mux.Handle("/", http.FileServer(http.FS(sub)))
+	return mux
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(v)
+}

@@ -1,0 +1,7 @@
+Name:	windsurf
+Tgid:	250
+Pid:	250
+Uid:	1000	1000	1000	1000
+VmRSS:	250000 kB
+VmSwap:	0 kB
+Threads:	4

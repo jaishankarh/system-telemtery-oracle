@@ -1,0 +1,7 @@
+Name:	chrome_crashpad
+Tgid:	506
+Pid:	506
+Uid:	1000	1000	1000	1000
+VmRSS:	8000 kB
+VmSwap:	0 kB
+Threads:	4

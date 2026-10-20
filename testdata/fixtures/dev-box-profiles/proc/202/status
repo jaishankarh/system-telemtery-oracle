@@ -1,0 +1,7 @@
+Name:	gopls
+Tgid:	202
+Pid:	202
+Uid:	1000	1000	1000	1000
+VmRSS:	500000 kB
+VmSwap:	20000 kB
+Threads:	4
